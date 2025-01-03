@@ -14,15 +14,10 @@
 
     <properties>
         <checkstyle.skip>true</checkstyle.skip>
+        <enforcer.skip>true</enforcer.skip>
     </properties>
 
     <dependencies>
-
-        <dependency>
-            <groupId>com.clickhouse</groupId>
-            <artifactId>clickhouse-jdbc</artifactId>
-            <classifier>all</classifier>
-        </dependency>
 
         <dependency>
             <groupId>com.databricks</groupId>
@@ -57,12 +52,13 @@
 
         <dependency>
             <groupId>io.trino</groupId>
-            <artifactId>trino-matching</artifactId>
+            <artifactId>trino-plugin-toolkit</artifactId>
         </dependency>
 
         <dependency>
-            <groupId>io.trino</groupId>
-            <artifactId>trino-plugin-toolkit</artifactId>
+            <groupId>org.apache.hive</groupId>
+            <artifactId>hive-jdbc</artifactId>
+            <version>4.0.1</version>
         </dependency>
 
         <dependency>
@@ -132,6 +128,13 @@
         </dependency>
 
         <dependency>
+            <groupId>io.delta</groupId>
+            <artifactId>delta-spark_2.13</artifactId>
+            <version>3.2.1</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
             <groupId>io.trino</groupId>
             <artifactId>trino-base-jdbc</artifactId>
             <type>test-jar</type>
@@ -141,7 +144,6 @@
         <dependency>
             <groupId>io.trino</groupId>
             <artifactId>trino-main</artifactId>
-            <scope>test</scope>
         </dependency>
 
         <dependency>
@@ -173,6 +175,77 @@
             <groupId>io.trino.tpch</groupId>
             <artifactId>tpch</artifactId>
             <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.hadoop</groupId>
+            <artifactId>hadoop-client-api</artifactId>
+            <version>3.4.1</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.hadoop</groupId>
+            <artifactId>hadoop-client-runtime</artifactId>
+            <version>3.4.1</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.hive</groupId>
+            <artifactId>hive-service</artifactId>
+            <version>4.0.1</version>
+            <scope>test</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>commons-logging</groupId>
+                    <artifactId>commons-logging</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>javax.annotation</groupId>
+                    <artifactId>javax.annotation-api</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>javax.inject</groupId>
+                    <artifactId>javax.inject</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>javax.servlet</groupId>
+                    <artifactId>javax.servlet-api</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>net.shibboleth.tool</groupId>
+                    <artifactId>xmlsectool</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.apache.arrow</groupId>
+                    <artifactId>arrow-vector</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.apache.commons</groupId>
+                    <artifactId>commons-collections</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.apache.commons</groupId>
+                    <artifactId>commons-collections4</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.apache.logging.log4j</groupId>
+                    <artifactId>log4j-core</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.eclipse.jetty</groupId>
+                    <artifactId>jetty-servlet</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.eclipse.jetty</groupId>
+                    <artifactId>jetty-webapp</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.eclipse.jetty.websocket</groupId>
+                    <artifactId>websocket-client</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <dependency>
@@ -270,6 +343,46 @@
                     <commitIdGenerationMode>false</commitIdGenerationMode>
                 </configuration>
             </plugin>
+            <!--            <plugin>-->
+            <!--                <groupId>io.fabric8</groupId>-->
+            <!--                <artifactId>docker-maven-plugin</artifactId>-->
+            <!--                <version>0.45.1</version>-->
+            <!--                <configuration>-->
+            <!--                    <imagePullPolicy>IfNotPresent</imagePullPolicy>-->
+            <!--                    <images>-->
+            <!--                        <image>-->
+            <!--                            <alias>spark-jdbc</alias>-->
+            <!--                            <name>ohdsi/broadsea-spark-sql:1.0.2</name>-->
+            <!--                            <run>-->
+            <!--                                <namingStrategy>alias</namingStrategy>-->
+            <!--                                <ports>-->
+            <!--                                    <port>10000:10000</port>-->
+            <!--                                </ports>-->
+            <!--                                <wait>-->
+            <!--                                    <log>(?s)database system is ready to accept connections.*database system is ready to accept connections</log>-->
+            <!--                                    <time>20000</time>-->
+            <!--                                </wait>-->
+            <!--                            </run>-->
+            <!--                        </image>-->
+            <!--                    </images>-->
+            <!--                </configuration>-->
+            <!--                <executions>-->
+            <!--                    <execution>-->
+            <!--                        <id>docker:start</id>-->
+            <!--                        <goals>-->
+            <!--                            <goal>start</goal>-->
+            <!--                        </goals>-->
+            <!--                        <phase>process-test-classes</phase>-->
+            <!--                    </execution>-->
+            <!--                    &lt;!&ndash;                    <execution>&ndash;&gt;-->
+            <!--                    &lt;!&ndash;                        <id>docker:stop</id>&ndash;&gt;-->
+            <!--                    &lt;!&ndash;                        <goals>&ndash;&gt;-->
+            <!--                    &lt;!&ndash;                            <goal>stop</goal>&ndash;&gt;-->
+            <!--                    &lt;!&ndash;                        </goals>&ndash;&gt;-->
+            <!--                    &lt;!&ndash;                        <phase>post-clean</phase>&ndash;&gt;-->
+            <!--                    &lt;!&ndash;                    </execution>&ndash;&gt;-->
+            <!--                </executions>-->
+            <!--            </plugin>-->
         </plugins>
     </build>
 </project>

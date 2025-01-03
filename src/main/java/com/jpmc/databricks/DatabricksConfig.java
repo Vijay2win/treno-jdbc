@@ -13,7 +13,6 @@ public class DatabricksConfig {
     private String hostName;
     private String httpPath;
     private boolean mapStringAsVarchar;
-    private String oauthToken;
     private String connectionUrl;
 
     @Config("http-path")
@@ -35,17 +34,6 @@ public class DatabricksConfig {
 
     public String getHostName() {
         return hostName;
-    }
-
-    @Config("oauth-token")
-    @ConfigSecuritySensitive
-    public DatabricksConfig setOauthToken(String oauthToken) {
-        this.oauthToken = oauthToken;
-        return this;
-    }
-
-    public String getOauthToken() {
-        return oauthToken;
     }
 
     @Config("connection-url")

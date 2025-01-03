@@ -27,11 +27,12 @@ import static java.util.Objects.requireNonNull;
 public final class DatabricksQueryRunner {
     public static final String TPCH_SCHEMA = "tpch";
 
-    public static Builder builder() {
-        return new Builder()
-                .addConnectorProperty("connection-url", "jdbc:databricks://community.cloud.databricks.com:443/default;transportMode=http;ssl=1;httpPath=sql/protocolv1/o/3414251373208641/1227-183607-gazza0cf;AuthMech=3;UID=token;PWD=<personal-access-token>\n")
+    public static Builder builder(TestingDatabricksServer server) {
+        Builder builder = new Builder()
+                .addConnectorProperty("connection-url", server.getJdbcUrl())
                 .addConnectorProperty("http-path", "sql/protocolv1/o/3414251373208641/1227-183607-gazza0cf")
                 .addConnectorProperty("host-name", "community.cloud.databricks.com");
+        return builder;
     }
 
     public static final class Builder
@@ -69,9 +70,8 @@ public final class DatabricksQueryRunner {
                 queryRunner.installPlugin(new DatabricksPlugin());
                 queryRunner.createCatalog("databricks", "databricks", connectorProperties);
 
-//                Session session = Session.builder(queryRunner.getDefaultSession()).setIdentity(Identity.forUser("user_name").withExtraCredentials(ImmutableMap.of("oauth-token", "sample_token")).build()).build();
-//                queryRunner.execute(session, "CREATE SCHEMA " + TPCH_SCHEMA);
-//                copyTpchTables(queryRunner, "tpch", TINY_SCHEMA_NAME, session, initialTables);
+                queryRunner.execute("CREATE SCHEMA IF NOT EXISTS " + TPCH_SCHEMA);
+//                copyTpchTables(queryRunner, "tpch", TINY_SCHEMA_NAME, initialTables);
 
                 return queryRunner;
             } catch (Throwable e) {
@@ -83,7 +83,7 @@ public final class DatabricksQueryRunner {
 
     public static void main(String[] args)
             throws Exception {
-        QueryRunner queryRunner = builder()
+        QueryRunner queryRunner = builder(new TestingDatabricksServer())
                 .addCoordinatorProperty("http-server.http.port", "8080")
                 .setInitialTables(TpchTable.getTables())
                 .build();

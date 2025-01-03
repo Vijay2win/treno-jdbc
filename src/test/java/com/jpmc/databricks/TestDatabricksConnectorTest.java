@@ -2,7 +2,6 @@ package com.jpmc.databricks;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Maps;
 import io.trino.Session;
 import io.trino.plugin.jdbc.BaseJdbcConnectorTest;
 import io.trino.spi.security.Identity;
@@ -20,14 +19,17 @@ import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.sql.*;
-import java.util.*;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.OptionalInt;
 
 import static io.trino.plugin.jdbc.JdbcMetadataSessionProperties.DOMAIN_COMPACTION_THRESHOLD;
 import static io.trino.plugin.jdbc.TypeHandlingJdbcSessionProperties.UNSUPPORTED_TYPE_HANDLING;
 import static io.trino.plugin.jdbc.UnsupportedTypeHandling.CONVERT_TO_VARCHAR;
 import static io.trino.spi.type.VarcharType.VARCHAR;
-import static io.trino.testing.TestingNames.randomNameSuffix;
 import static io.trino.testing.MaterializedResult.resultBuilder;
+import static io.trino.testing.TestingNames.randomNameSuffix;
 import static java.lang.String.format;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -42,71 +44,66 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
 
     @Override
     protected Session getSession() {
-        return Session.builder(getSession()).setIdentity(Identity.forUser("user_name").withExtraCredentials(ImmutableMap.of("oauth-token", "sample_token")).build()).build();
+        return Session.builder(super.getSession()).setIdentity(Identity.forUser("user_name").withExtraCredentials(ImmutableMap.of("oauth-token", "sample_token")).build()).build();
     }
 
     @Override
-    protected boolean hasBehavior(TestingConnectorBehavior connectorBehavior)
-    {
+    protected boolean hasBehavior(TestingConnectorBehavior connectorBehavior) {
         return switch (connectorBehavior) {
             case SUPPORTS_AGGREGATION_PUSHDOWN_COVARIANCE,
-                 SUPPORTS_AGGREGATION_PUSHDOWN_COUNT_DISTINCT,
-                 SUPPORTS_AGGREGATION_PUSHDOWN_CORRELATION,
-                 SUPPORTS_PREDICATE_EXPRESSION_PUSHDOWN_WITH_LIKE,
-                 SUPPORTS_PREDICATE_PUSHDOWN_WITH_VARCHAR_EQUALITY,
-                 SUPPORTS_TOPN_PUSHDOWN,
-                 SUPPORTS_TRUNCATE -> true;
+                    SUPPORTS_AGGREGATION_PUSHDOWN_COUNT_DISTINCT,
+                    SUPPORTS_AGGREGATION_PUSHDOWN_CORRELATION,
+                    SUPPORTS_PREDICATE_EXPRESSION_PUSHDOWN_WITH_LIKE,
+                    SUPPORTS_PREDICATE_PUSHDOWN_WITH_VARCHAR_EQUALITY,
+                    SUPPORTS_TOPN_PUSHDOWN,
+                    SUPPORTS_TRUNCATE -> true;
             case SUPPORTS_AGGREGATION_PUSHDOWN_REGRESSION,
-                 SUPPORTS_AGGREGATION_PUSHDOWN_STDDEV,
-                 SUPPORTS_AGGREGATION_PUSHDOWN_VARIANCE,
-                 SUPPORTS_ARRAY,
-                 SUPPORTS_DELETE,
-                 SUPPORTS_DROP_NOT_NULL_CONSTRAINT,
-                 SUPPORTS_MAP_TYPE,
-                 SUPPORTS_NEGATIVE_DATE,
-                 SUPPORTS_ROW_TYPE,
-                 SUPPORTS_SET_COLUMN_TYPE,
-                 SUPPORTS_UPDATE -> false;
+                    SUPPORTS_AGGREGATION_PUSHDOWN_STDDEV,
+                    SUPPORTS_AGGREGATION_PUSHDOWN_VARIANCE,
+                    SUPPORTS_ARRAY,
+                    SUPPORTS_DELETE,
+                    SUPPORTS_DROP_NOT_NULL_CONSTRAINT,
+                    SUPPORTS_MAP_TYPE,
+                    SUPPORTS_NEGATIVE_DATE,
+                    SUPPORTS_ROW_TYPE,
+                    SUPPORTS_SET_COLUMN_TYPE,
+                    SUPPORTS_UPDATE -> false;
             default -> super.hasBehavior(connectorBehavior);
         };
     }
 
     @Override
     protected QueryRunner createQueryRunner()
-            throws Exception
-    {
-        return DatabricksQueryRunner.builder()
+            throws Exception {
+        this.databricksServer = closeAfterClass(new TestingDatabricksServer());
+        return DatabricksQueryRunner.builder(databricksServer)
                 .setInitialTables(REQUIRED_TPCH_TABLES)
                 .build();
     }
 
     @Test
-    public void testSampleBySqlInjection()
-    {
+    public void testSampleBySqlInjection() {
         String tableName = "sql_injection_" + randomNameSuffix();
         try {
             assertQueryFails("CREATE TABLE " + tableName + " (p1 int NOT NULL, p2 boolean NOT NULL, x VARCHAR) WITH (engine = 'MergeTree', order_by = ARRAY['p1', 'p2'], primary_key = ARRAY['p1', 'p2'], sample_by = 'p2; drop table tpch.nation')", "(?s).*Missing columns: 'p2; drop table tpch.nation.*");
             assertUpdate("CREATE TABLE " + tableName + " (p1 int NOT NULL, p2 boolean NOT NULL, x VARCHAR) WITH (engine = 'MergeTree', order_by = ARRAY['p1', 'p2'], primary_key = ARRAY['p1', 'p2'], sample_by = 'p2')");
             assertQueryFails("ALTER TABLE " + tableName + " SET PROPERTIES sample_by = 'p2; drop table tpch.nation'", "(?s).*Missing columns: 'p2; drop table tpch.nation.*");
             assertUpdate("ALTER TABLE " + tableName + " SET PROPERTIES sample_by = 'p2'");
-        }
-        finally {
+        } finally {
             assertUpdate("DROP TABLE IF EXISTS " + tableName);
         }
     }
 
     @Test
     @Override
-    public void testRenameColumn()
-    {
+    public void testRenameColumn() {
         // databricks need resets all data in a column for specified column which to be renamed
         abort("TODO: test not implemented yet");
     }
 
     @Test
     @Override
-    public void testRenameColumnWithComment()
-    {
+    public void testRenameColumnWithComment() {
         try (TestTable table = new TestTable(
                 getQueryRunner()::execute,
                 "test_rename_column_",
@@ -119,8 +116,7 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
     }
 
     @Override
-    public void testAddColumnWithCommentSpecialCharacter(String comment)
-    {
+    public void testAddColumnWithCommentSpecialCharacter(String comment) {
         // Override because default storage engine doesn't support renaming columns
         try (TestTable table = new TestTable(getQueryRunner()::execute, "test_add_column_", "(a_varchar varchar NOT NULL) WITH (engine = 'mergetree', order_by = ARRAY['a_varchar'])")) {
             assertUpdate("ALTER TABLE " + table.getName() + " ADD COLUMN b_varchar varchar COMMENT " + varcharLiteral(comment));
@@ -130,8 +126,7 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
 
     @Test
     @Override
-    public void testDropAndAddColumnWithSameName()
-    {
+    public void testDropAndAddColumnWithSameName() {
         try (TestTable table = new TestTable(getQueryRunner()::execute, "test_drop_add_column", "(x int NOT NULL, y int, z int) WITH (engine = 'MergeTree', order_by = ARRAY['x'])", ImmutableList.of("1,2,3"))) {
             assertUpdate("ALTER TABLE " + table.getName() + " DROP COLUMN y");
             assertQuery("SELECT * FROM " + table.getName(), "VALUES (1, 3)");
@@ -142,19 +137,18 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
     }
 
     @Override
-    protected String createTableSqlForAddingAndDroppingColumn(String tableName, String columnNameInSql)
-    {
+    protected String createTableSqlForAddingAndDroppingColumn(String tableName, String columnNameInSql) {
         return format("CREATE TABLE %s(%s varchar(50), value varchar(50) NOT NULL) WITH (engine = 'MergeTree', order_by = ARRAY['value'])", tableName, columnNameInSql);
     }
 
     @Test
     @Disabled
     @Override
-    public void testRenameColumnName() {}
+    public void testRenameColumnName() {
+    }
 
     @Override
-    protected Optional<String> filterColumnNameTestData(String columnName)
-    {
+    protected Optional<String> filterColumnNameTestData(String columnName) {
         // TODO: Investigate why a\backslash allows creating a table, but it throws an exception when selecting
         if (columnName.equals("a\\backslash`")) {
             return Optional.empty();
@@ -164,8 +158,7 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
 
     @Test
     @Override
-    public void testDropColumn()
-    {
+    public void testDropColumn() {
         String tableName = "test_drop_column_" + randomNameSuffix();
 
         // only MergeTree engine table can drop column
@@ -189,21 +182,18 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
     }
 
     @Override
-    protected TestTable createTableWithOneIntegerColumn(String namePrefix)
-    {
+    protected TestTable createTableWithOneIntegerColumn(String namePrefix) {
         return new TestTable(getQueryRunner()::execute, namePrefix, "(col integer NOT NULL) WITH (engine = 'MergeTree', order_by = ARRAY['col'])");
     }
 
     @Override
-    protected String tableDefinitionForAddColumn()
-    {
+    protected String tableDefinitionForAddColumn() {
         return "(x VARCHAR NOT NULL) WITH (engine = 'MergeTree', order_by = ARRAY['x'])";
     }
 
     @Test
     @Override // Overridden because the default storage type doesn't support adding columns
-    public void testAddNotNullColumnToEmptyTable()
-    {
+    public void testAddNotNullColumnToEmptyTable() {
         try (TestTable table = new TestTable(getQueryRunner()::execute, "test_add_notnull_col_to_empty", "(a_varchar varchar NOT NULL)  WITH (engine = 'MergeTree', order_by = ARRAY['a_varchar'])")) {
             String tableName = table.getName();
 
@@ -217,9 +207,9 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
     }
 
     @Test
-    @Override // Overridden because (a) the default storage type doesn't support adding columns and (b) databricks has implicit default value for new NON NULL column
-    public void testAddNotNullColumn()
-    {
+    @Override
+    // Overridden because (a) the default storage type doesn't support adding columns and (b) databricks has implicit default value for new NON NULL column
+    public void testAddNotNullColumn() {
         try (TestTable table = new TestTable(getQueryRunner()::execute, "test_add_notnull_col", "(a_varchar varchar NOT NULL)  WITH (engine = 'MergeTree', order_by = ARRAY['a_varchar'])")) {
             String tableName = table.getName();
 
@@ -237,8 +227,7 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
 
     @Test
     @Override
-    public void testAddColumnWithComment()
-    {
+    public void testAddColumnWithComment() {
         // Override because the default storage type doesn't support adding columns
         try (TestTable table = new TestTable(getQueryRunner()::execute, "test_add_col_desc_", "(a_varchar varchar NOT NULL) WITH (engine = 'MergeTree', order_by = ARRAY['a_varchar'])")) {
             String tableName = table.getName();
@@ -253,24 +242,21 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
 
     @Test
     @Override
-    public void testAlterTableAddLongColumnName()
-    {
+    public void testAlterTableAddLongColumnName() {
         // TODO: Find the maximum column name length in databricks and enable this test.
         abort("TODO");
     }
 
     @Test
     @Override
-    public void testAlterTableRenameColumnToLongName()
-    {
+    public void testAlterTableRenameColumnToLongName() {
         // TODO: Find the maximum column name length in databricks and enable this test.
         abort("TODO");
     }
 
     @Test
     @Override
-    public void testShowCreateTable()
-    {
+    public void testShowCreateTable() {
         assertThat(computeActual("SHOW CREATE TABLE orders").getOnlyValue())
                 .isEqualTo("CREATE TABLE databricks.tpch.orders (\n" +
                         "   orderkey bigint,\n" +
@@ -289,8 +275,7 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
     }
 
     @Override
-    protected MaterializedResult getDescribeOrdersResult()
-    {
+    protected MaterializedResult getDescribeOrdersResult() {
         return resultBuilder(getSession(), VARCHAR, VARCHAR, VARCHAR, VARCHAR)
                 .row("orderkey", "bigint", "", "")
                 .row("custkey", "bigint", "", "")
@@ -305,8 +290,7 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
     }
 
     @Override
-    protected TestTable createTableWithDefaultColumns()
-    {
+    protected TestTable createTableWithDefaultColumns() {
         return new TestTable(
                 onRemoteDatabase(),
                 "tpch.tbl",
@@ -319,8 +303,7 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
 
     @Test
     @Override
-    public void testCharVarcharComparison()
-    {
+    public void testCharVarcharComparison() {
         assertThatThrownBy(super::testCharVarcharComparison)
                 .hasMessageContaining("For query")
                 .hasMessageContaining("Actual rows")
@@ -331,8 +314,7 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
     }
 
     @Test
-    public void testDifferentEngine()
-    {
+    public void testDifferentEngine() {
         String tableName = "test_different_engine_" + randomNameSuffix();
         // MergeTree
         assertUpdate("CREATE TABLE " + tableName + " (id int NOT NULL, x VARCHAR) WITH (engine = 'MergeTree', order_by = ARRAY['id'])");
@@ -366,8 +348,7 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
     }
 
     @Test
-    public void testTableProperty()
-    {
+    public void testTableProperty() {
         String tableName = "test_table_property_" + randomNameSuffix();
         // no table property, it should create a table with default Log engine table
         assertUpdate("CREATE TABLE " + tableName + " (id int NOT NULL, x VARCHAR)");
@@ -511,8 +492,7 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
 
     @Test
     public void testSetTableProperties()
-            throws Exception
-    {
+            throws Exception {
         try (TestTable table = new TestTable(
                 getQueryRunner()::execute,
                 "test_alter_table_properties",
@@ -537,8 +517,7 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
     }
 
     @Test
-    public void testAlterInvalidTableProperties()
-    {
+    public void testAlterInvalidTableProperties() {
         try (TestTable table = new TestTable(
                 getQueryRunner()::execute,
                 "test_alter_table_properties",
@@ -550,8 +529,7 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
     }
 
     @Override
-    protected TestTable createTableWithUnsupportedColumn()
-    {
+    protected TestTable createTableWithUnsupportedColumn() {
         return new TestTable(
                 onRemoteDatabase(),
                 "tpch.test_unsupported_column_present",
@@ -559,8 +537,7 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
     }
 
     @Override
-    protected Optional<BaseConnectorTest.DataMappingTestSetup> filterDataMappingSmokeTestData(BaseConnectorTest.DataMappingTestSetup dataMappingTestSetup)
-    {
+    protected Optional<BaseConnectorTest.DataMappingTestSetup> filterDataMappingSmokeTestData(BaseConnectorTest.DataMappingTestSetup dataMappingTestSetup) {
         switch (dataMappingTestSetup.getTrinoTypeName()) {
             case "boolean":
                 // databricks does not have built-in support for boolean type and we map boolean to tinyint.
@@ -596,8 +573,7 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
     // TODO: Remove override once decimal predicate pushdown is implemented (https://github.com/trinodb/trino/issues/7100)
     @Test
     @Override
-    public void testNumericAggregationPushdown()
-    {
+    public void testNumericAggregationPushdown() {
         String schemaName = getSession().getSchema().orElseThrow();
         try (TestTable testTable = createAggregationTestTable(schemaName + ".test_aggregation_pushdown",
                 ImmutableList.of("100.000, 100000000.000000000, 100.000, 100000000", "123.321, 123456789.987654321, 123.321, 123456789"))) {
@@ -610,21 +586,18 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
     }
 
     @Override
-    protected TestTable createAggregationTestTable(String name, List<String> rows)
-    {
+    protected TestTable createAggregationTestTable(String name, List<String> rows) {
         return new TestTable(onRemoteDatabase(), name, "(short_decimal Nullable(Decimal(9, 3)), long_decimal Nullable(Decimal(30, 10)), t_double Nullable(Float64), a_bigint Nullable(Int64)) Engine=Log", rows);
     }
 
     @Override
-    protected TestTable createTableWithDoubleAndRealColumns(String name, List<String> rows)
-    {
+    protected TestTable createTableWithDoubleAndRealColumns(String name, List<String> rows) {
         return new TestTable(onRemoteDatabase(), name, "(t_double Nullable(Float64), u_double Nullable(Float64), v_real Nullable(Float32), w_real Nullable(Float32)) Engine=Log", rows);
     }
 
     @Test
     @Override
-    public void testInsertIntoNotNullColumn()
-    {
+    public void testInsertIntoNotNullColumn() {
         try (TestTable table = new TestTable(getQueryRunner()::execute, "test_insert_not_null_", "(nullable_col INTEGER, not_null_col INTEGER NOT NULL)")) {
             assertUpdate(format("INSERT INTO %s (not_null_col) VALUES (2)", table.getName()), 1);
             assertQuery("SELECT * FROM " + table.getName(), "VALUES (NULL, 2)");
@@ -650,21 +623,18 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
     }
 
     @Override
-    protected String errorMessageForCreateTableAsSelectNegativeDate(String date)
-    {
+    protected String errorMessageForCreateTableAsSelectNegativeDate(String date) {
         return "Date must be between 1970-01-01 and 2149-06-06 in databricks: " + date;
     }
 
     @Override
-    protected String errorMessageForInsertNegativeDate(String date)
-    {
+    protected String errorMessageForInsertNegativeDate(String date) {
         return "Date must be between 1970-01-01 and 2149-06-06 in databricks: " + date;
     }
 
     @Test
     @Override
-    public void testDateYearOfEraPredicate()
-    {
+    public void testDateYearOfEraPredicate() {
         // Override because the connector throws an exception instead of an empty result when the value is out of supported range
         assertQuery("SELECT orderdate FROM orders WHERE orderdate = DATE '1997-09-14'", "VALUES DATE '1997-09-14'");
         assertQueryFails(
@@ -672,31 +642,27 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
                 errorMessageForDateYearOfEraPredicate("-1996-09-14"));
     }
 
-    protected String errorMessageForDateYearOfEraPredicate(String date)
-    {
+    protected String errorMessageForDateYearOfEraPredicate(String date) {
         return "Date must be between 1970-01-01 and 2149-06-06 in databricks: " + date;
     }
 
     @Test
     @Override
-    public void testCharTrailingSpace()
-    {
+    public void testCharTrailingSpace() {
         assertThatThrownBy(super::testCharTrailingSpace)
                 .hasMessageStartingWith("Failed to execute statement: CREATE TABLE tpch.char_trailing_space");
         abort("Implement test for databricks");
     }
 
     @Override
-    protected TestTable simpleTable()
-    {
+    protected TestTable simpleTable() {
         // override because databricks requires engine specification
         return new TestTable(onRemoteDatabase(), "tpch.simple_table", "(col BIGINT) Engine=Log", ImmutableList.of("1", "2"));
     }
 
     @Test
     @Override
-    public void testCreateTableWithLongTableName()
-    {
+    public void testCreateTableWithLongTableName() {
         // Override because databricks connector can create a table which can't be dropped
         String baseTableName = "test_create_" + randomNameSuffix();
         String validTableName = baseTableName + "z".repeat(maxTableNameLength().orElseThrow() - baseTableName.length());
@@ -715,8 +681,7 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
 
     @Test
     @Override
-    public void testRenameSchemaToLongName()
-    {
+    public void testRenameSchemaToLongName() {
         // Override because the max length is different from CREATE SCHEMA case
         String sourceTableName = "test_rename_source_" + randomNameSuffix();
         assertUpdate("CREATE SCHEMA " + sourceTableName);
@@ -739,22 +704,19 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
     }
 
     @Override
-    protected OptionalInt maxSchemaNameLength()
-    {
+    protected OptionalInt maxSchemaNameLength() {
         // The numeric value depends on file system
         return OptionalInt.of(255 - ".sql.tmp".length());
     }
 
     @Override
-    protected void verifySchemaNameLengthFailurePermissible(Throwable e)
-    {
+    protected void verifySchemaNameLengthFailurePermissible(Throwable e) {
         assertThat(e).hasMessageContaining("File name too long");
     }
 
     @Test
     @Override
-    public void testRenameTableToLongTableName()
-    {
+    public void testRenameTableToLongTableName() {
         // Override because databricks connector can rename to a table which can't be dropped
         String sourceTableName = "test_source_long_table_name_" + randomNameSuffix();
         assertUpdate("CREATE TABLE " + sourceTableName + " AS SELECT 123 x", 1);
@@ -778,24 +740,21 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
 
     @Test
     @Override // Override because the failure message differs
-    public void testNativeQueryIncorrectSyntax()
-    {
+    public void testNativeQueryIncorrectSyntax() {
         assertThat(query("SELECT * FROM TABLE(system.query(query => 'some wrong syntax'))"))
                 .failure().hasMessage("Query not supported: ResultSetMetaData not available for query: some wrong syntax");
     }
 
     @Test
     @Override // Override because the failure message differs
-    public void testNativeQueryInsertStatementTableDoesNotExist()
-    {
+    public void testNativeQueryInsertStatementTableDoesNotExist() {
         assertThat(getQueryRunner().tableExists(getSession(), "non_existent_table")).isFalse();
         assertThat(query("SELECT * FROM TABLE(system.query(query => 'INSERT INTO non_existent_table VALUES (1)'))"))
                 .failure().hasMessage("Query not supported: ResultSetMetaData not available for query: INSERT INTO non_existent_table VALUES (1)");
     }
 
     @Test
-    public void testLargeDefaultDomainCompactionThreshold()
-    {
+    public void testLargeDefaultDomainCompactionThreshold() {
         String catalogName = getSession().getCatalog().orElseThrow();
         String propertyName = catalogName + "." + DOMAIN_COMPACTION_THRESHOLD;
         assertQuery(
@@ -804,22 +763,21 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
     }
 
     @Test
-    public void testFloatPredicatePushdown()
-    {
+    public void testFloatPredicatePushdown() {
         try (TestTable table = new TestTable(
                 getQueryRunner()::execute,
                 "test_float_predicate_pushdown",
                 """
-                (
-                c_real real,
-                c_real_neg_infinity real,
-                c_real_pos_infinity real,
-                c_real_nan real,
-                c_double double,
-                c_double_neg_infinity double,
-                c_double_pos_infinity double,
-                c_double_nan double)
-                """,
+                        (
+                        c_real real,
+                        c_real_neg_infinity real,
+                        c_real_pos_infinity real,
+                        c_real_nan real,
+                        c_double double,
+                        c_double_neg_infinity double,
+                        c_double_pos_infinity double,
+                        c_double_nan double)
+                        """,
                 List.of("3.14, -infinity(), +infinity(), nan(), 3.14, -infinity(), +infinity(), nan()"))) {
             assertThat(query("SELECT c_real FROM %s WHERE c_real = real '3.14'".formatted(table.getName())))
                     // because of https://github.com/trinodb/trino/issues/9998
@@ -851,14 +809,12 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
     }
 
     @Test
-    public void testOrPredicatePushdown()
-    {
+    public void testOrPredicatePushdown() {
         assertThat(query("SELECT * FROM nation WHERE name = 'ALGERIA' OR comment = 'comment'")).isFullyPushedDown();
     }
 
     @Test
-    public void testTextualPredicatePushdown()
-    {
+    public void testTextualPredicatePushdown() {
         Session smallDomainCompactionThreshold = Session.builder(getSession())
                 .setCatalogSessionProperty("databricks", "domain_compaction_threshold", "1")
                 .build();
@@ -932,22 +888,22 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
                 onRemoteDatabase(),
                 "tpch.test_textual_predicate_pushdown",
                 """
-                (
-                unsupported_1 Point,
-                unsupported_2 Point,
-                some_column String,
-                a_string String,
-                a_string_alias Text,
-                a_fixed_string FixedString(1),
-                a_nullable_string Nullable(String),
-                a_nullable_string_alias Nullable(Text),
-                a_nullable_fixed_string Nullable(FixedString(1)),
-                a_lowcardinality_nullable_string LowCardinality(Nullable(String)),
-                a_lowcardinality_nullable_fixed_string LowCardinality(Nullable(FixedString(1))),
-                a_enum_1 Enum('hello', 'world', 'a', 'b', 'c', '%', '_'),
-                a_enum_2 Enum('hello', 'world', 'a', 'b', 'c', '%', '_'))
-                ENGINE=Log
-                """,
+                        (
+                        unsupported_1 Point,
+                        unsupported_2 Point,
+                        some_column String,
+                        a_string String,
+                        a_string_alias Text,
+                        a_fixed_string FixedString(1),
+                        a_nullable_string Nullable(String),
+                        a_nullable_string_alias Nullable(Text),
+                        a_nullable_fixed_string Nullable(FixedString(1)),
+                        a_lowcardinality_nullable_string LowCardinality(Nullable(String)),
+                        a_lowcardinality_nullable_fixed_string LowCardinality(Nullable(FixedString(1))),
+                        a_enum_1 Enum('hello', 'world', 'a', 'b', 'c', '%', '_'),
+                        a_enum_2 Enum('hello', 'world', 'a', 'b', 'c', '%', '_'))
+                        ENGINE=Log
+                        """,
                 List.of(
                         "(10, 10), (10, 10), 'z', '\\\\', '\\\\', '\\\\', '\\\\', '\\\\', '\\\\', '\\\\', '\\\\', 'hello', 'world'",
                         "(10, 10), (10, 10), 'z', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_'",
@@ -1013,8 +969,7 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
         }
     }
 
-    private void assertLike(boolean isPositive, TestTable table, String withConnectorExpression, Session convertToVarchar)
-    {
+    private void assertLike(boolean isPositive, TestTable table, String withConnectorExpression, Session convertToVarchar) {
         String like = isPositive ? "LIKE" : "NOT LIKE";
         assertThat(query("SELECT some_column FROM " + table.getName() + " WHERE a_string " + like + " NULL")).returnsEmptyResult();
         assertThat(query("SELECT some_column FROM " + table.getName() + " WHERE a_string " + like + " 'b'")).isFullyPushedDown();
@@ -1072,8 +1027,7 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
     }
 
     @Test
-    public void testIsNull()
-    {
+    public void testIsNull() {
         Session session = Session.builder(getSession()).setIdentity(Identity.forUser("").withExtraCredentials(ImmutableMap.of("", "")).build()).build();
 
 //        NullPushdownDataTypeTest.connectorExpressionOnly()
@@ -1126,8 +1080,7 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
 
     @Test
     @Override // Override because databricks doesn't follow SQL standard syntax
-    public void testExecuteProcedure()
-    {
+    public void testExecuteProcedure() {
         String tableName = "test_execute" + randomNameSuffix();
         String schemaTableName = getSession().getSchema().orElseThrow() + "." + tableName;
 
@@ -1144,39 +1097,34 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
 
             assertUpdate("CALL system.execute('DROP TABLE " + schemaTableName + "')");
             assertThat(getQueryRunner().tableExists(getSession(), tableName)).isFalse();
-        }
-        finally {
+        } finally {
             assertUpdate("DROP TABLE IF EXISTS " + schemaTableName);
         }
     }
 
     @Test
     @Override // Override because databricks allows SELECT query in update procedure
-    public void testExecuteProcedureWithInvalidQuery()
-    {
+    public void testExecuteProcedureWithInvalidQuery() {
         assertUpdate("CALL system.execute('SELECT 1')");
         assertQueryFails("CALL system.execute('invalid')", "(?s)Failed to execute query.*");
     }
 
     @Override
-    protected OptionalInt maxTableNameLength()
-    {
+    protected OptionalInt maxTableNameLength() {
         // The numeric value depends on file system
         return OptionalInt.of(255 - ".sql.detached".length());
     }
 
     @Override
-    protected SqlExecutor onRemoteDatabase()
-    {
+    protected SqlExecutor onRemoteDatabase() {
         return databricksServer::execute;
     }
 
     private Map<String, String> getTableProperties(String schemaName, String tableName)
-            throws SQLException
-    {
+            throws SQLException {
         String sql = "SELECT * FROM system.tables WHERE database = ? AND name = ?";
         try (Connection connection = DriverManager.getConnection(databricksServer.getJdbcUrl(), databricksServer.getConnectProperties());
-                PreparedStatement preparedStatement = connection.prepareStatement(sql)) {
+             PreparedStatement preparedStatement = connection.prepareStatement(sql)) {
             preparedStatement.setString(1, schemaName);
             preparedStatement.setString(2, tableName);
 
@@ -1193,8 +1141,7 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
         }
     }
 
-    private DataSetup databricksCreateAndInsert(String tableNamePrefix)
-    {
+    private DataSetup databricksCreateAndInsert(String tableNamePrefix) {
         return new CreateAndInsertDataSetup(new DatabricksSqlExecutor(onRemoteDatabase()), tableNamePrefix);
     }
 }

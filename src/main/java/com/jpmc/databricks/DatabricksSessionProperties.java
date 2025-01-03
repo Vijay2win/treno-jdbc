@@ -24,7 +24,7 @@ public class DatabricksSessionProperties implements SessionPropertiesProvider {
                         MAP_STRING_AS_VARCHAR,
                         "Map JDBC String and FixedString as varchar instead of varbinary",
                         clickHouseConfig.isMapStringAsVarchar(),
-                        false));
+                        true));
     }
 
     @Override
