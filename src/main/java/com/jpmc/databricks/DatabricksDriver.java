@@ -2,22 +2,24 @@ package com.jpmc.databricks;
 
 import java.sql.*;
 import java.util.Properties;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Logger;
 
 public class DatabricksDriver implements Driver {
-    private final com.databricks.client.jdbc.Driver databricksDelegate;
-    private final org.apache.hive.jdbc.HiveDriver hiveDelegate;
+    private final Driver databricksDelegate;
+    private final Driver hiveDelegate;
     private final DatabricksConfig config;
+    private final AtomicBoolean databricks = new AtomicBoolean(true);
 
     public DatabricksDriver(DatabricksConfig config) {
         this.config = config;
         this.databricksDelegate = new com.databricks.client.jdbc.Driver();
         this.hiveDelegate = new org.apache.hive.jdbc.HiveDriver();
     }
+
     @Override
     public Connection connect(String url, Properties properties) throws SQLException {
         try {
-
             // First check the extra creds
             String token = properties.getProperty(OauthCredentialPropertiesProvider.OAUTH_TOKEN_NAME, null);
             if (token == null) {
@@ -26,8 +28,12 @@ public class DatabricksDriver implements Driver {
             }
 
             // Handle if the connection url is sent as a whole
-            if (config.getConnectionUrl() != null) { // TODO add oauth check
-                return hiveDelegate.connect(url, properties);
+            if (config.getConnectionUrl() != null) {
+                // TODO add oauth check
+                // TODO remove or move to seperate class?
+                // This class is only used for tests to run for now.
+                databricks.set(false);
+                return new HiveConnectionWithCatalog(hiveDelegate.connect(url, properties), url);
             }
             /*
              *  jdbc:databricks://<server-hostname>:443;
@@ -43,7 +49,7 @@ public class DatabricksDriver implements Driver {
             newproperties.put("AuthMech", "11");
             newproperties.put("Auth_Flow", "0");
             newproperties.put("Auth_AccessToken", token);
-            return databricksDelegate.connect(newurl, newproperties);
+            return new HiveConnectionWithCatalog(databricksDelegate.connect(newurl, newproperties), newurl);
         } catch (ClassNotFoundException ex) {
             throw new RuntimeException(ex);
         }
@@ -56,26 +62,27 @@ public class DatabricksDriver implements Driver {
 
     @Override
     public DriverPropertyInfo[] getPropertyInfo(String url, Properties properties) throws SQLException {
-        return databricksDelegate.getPropertyInfo(url, properties);
+
+        return (databricks.get()) ? databricksDelegate.getPropertyInfo(url, properties) : hiveDelegate.getPropertyInfo(url, properties);
     }
 
     @Override
     public int getMajorVersion() {
-        return databricksDelegate.getMajorVersion();
+        return (databricks.get()) ? databricksDelegate.getMajorVersion() : hiveDelegate.getMajorVersion();
     }
 
     @Override
     public int getMinorVersion() {
-        return databricksDelegate.getMinorVersion();
+        return (databricks.get()) ? databricksDelegate.getMinorVersion() : hiveDelegate.getMinorVersion();
     }
 
     @Override
     public boolean jdbcCompliant() {
-        return databricksDelegate.jdbcCompliant();
+        return (databricks.get()) ? databricksDelegate.jdbcCompliant() : hiveDelegate.jdbcCompliant();
     }
 
     @Override
     public Logger getParentLogger() throws SQLFeatureNotSupportedException {
-        return databricksDelegate.getParentLogger();
+        return (databricks.get()) ? databricksDelegate.getParentLogger() : hiveDelegate.getParentLogger();
     }
 }

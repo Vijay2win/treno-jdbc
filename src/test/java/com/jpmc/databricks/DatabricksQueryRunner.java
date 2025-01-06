@@ -60,8 +60,7 @@ public final class DatabricksQueryRunner {
         }
 
         @Override
-        public DistributedQueryRunner build()
-                throws Exception {
+        public DistributedQueryRunner build() throws Exception {
             DistributedQueryRunner queryRunner = super.build();
             try {
                 queryRunner.installPlugin(new TpchPlugin());
@@ -69,9 +68,8 @@ public final class DatabricksQueryRunner {
 
                 queryRunner.installPlugin(new DatabricksPlugin());
                 queryRunner.createCatalog("databricks", "databricks", connectorProperties);
-
-                queryRunner.execute("CREATE SCHEMA IF NOT EXISTS " + TPCH_SCHEMA);
-//                copyTpchTables(queryRunner, "tpch", TINY_SCHEMA_NAME, initialTables);
+                queryRunner.execute("create schema " + "databricks." + TPCH_SCHEMA);
+                copyTpchTables(queryRunner, "tpch", TINY_SCHEMA_NAME, initialTables);
 
                 return queryRunner;
             } catch (Throwable e) {

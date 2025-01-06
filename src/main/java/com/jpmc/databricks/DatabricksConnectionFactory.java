@@ -1,7 +1,6 @@
 package com.jpmc.databricks;
 
 import io.airlift.log.Logger;
-import io.trino.FullConnectorSession;
 import io.trino.plugin.jdbc.ConnectionFactory;
 import io.trino.plugin.jdbc.DriverConnectionFactory;
 import io.trino.plugin.jdbc.ForwardingConnection;
@@ -27,21 +26,16 @@ public class DatabricksConnectionFactory implements ConnectionFactory {
     public Connection openConnection(ConnectorSession session) throws SQLException {
         return new ForwardingConnection() {
             private final Connection delegate = DatabricksConnectionFactory.this.factory.openConnection(session);
-            private String catalog;
 
             @Override
-            protected Connection delegate() throws SQLException {
-                if (session instanceof FullConnectorSession) {
-                    catalog = ((FullConnectorSession) session).getSession().getCatalog().orElse("");
-                    delegate.setCatalog(catalog);
-                }
+            protected Connection delegate() {
                 return delegate;
             }
-
-            @Override
-            public String getCatalog() throws SQLException {
-                return catalog;
-            }
         };
+    }
+
+    @Override
+    public void close() throws SQLException {
+        factory.close();
     }
 }

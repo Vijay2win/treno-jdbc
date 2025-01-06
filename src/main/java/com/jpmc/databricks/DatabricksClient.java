@@ -1,5 +1,7 @@
 package com.jpmc.databricks;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.inject.Inject;
@@ -7,6 +9,7 @@ import io.trino.plugin.base.aggregation.AggregateFunctionRewriter;
 import io.trino.plugin.base.aggregation.AggregateFunctionRule;
 import io.trino.plugin.base.expression.ConnectorExpressionRewriter;
 import io.trino.plugin.base.mapping.IdentifierMapping;
+import io.trino.plugin.base.mapping.RemoteIdentifiers;
 import io.trino.plugin.jdbc.*;
 import io.trino.plugin.jdbc.aggregation.*;
 import io.trino.plugin.jdbc.expression.JdbcConnectorExpressionRewriterBuilder;
@@ -14,25 +17,22 @@ import io.trino.plugin.jdbc.expression.ParameterizedExpression;
 import io.trino.plugin.jdbc.logging.RemoteQueryModifier;
 import io.trino.spi.TrinoException;
 import io.trino.spi.connector.*;
+import io.trino.spi.security.ConnectorIdentity;
 import io.trino.spi.type.*;
 
+import javax.annotation.Nullable;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Types;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.function.BiFunction;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Strings.emptyToNull;
-import static io.trino.plugin.jdbc.CaseSensitivity.CASE_INSENSITIVE;
-import static io.trino.plugin.jdbc.CaseSensitivity.CASE_SENSITIVE;
+import static com.google.common.base.Strings.isNullOrEmpty;
 import static io.trino.plugin.jdbc.JdbcErrorCode.JDBC_ERROR;
 import static io.trino.plugin.jdbc.StandardColumnMappings.*;
-import static io.trino.plugin.jdbc.StandardColumnMappings.varcharColumnMapping;
 import static io.trino.plugin.jdbc.TypeHandlingJdbcSessionProperties.getUnsupportedTypeHandling;
 import static io.trino.plugin.jdbc.UnsupportedTypeHandling.CONVERT_TO_VARCHAR;
 import static io.trino.spi.StandardErrorCode.NOT_SUPPORTED;
@@ -43,20 +43,17 @@ import static io.trino.spi.type.DoubleType.DOUBLE;
 import static io.trino.spi.type.IntegerType.INTEGER;
 import static io.trino.spi.type.RealType.REAL;
 import static io.trino.spi.type.SmallintType.SMALLINT;
-import static io.trino.spi.type.TimestampType.TIMESTAMP_MILLIS;
 import static io.trino.spi.type.TinyintType.TINYINT;
 import static io.trino.spi.type.VarbinaryType.VARBINARY;
 import static io.trino.spi.type.VarcharType.createUnboundedVarcharType;
-import static io.trino.spi.type.VarcharType.createVarcharType;
 import static java.lang.Math.max;
 import static java.lang.String.format;
 import static java.lang.String.join;
-import static java.math.RoundingMode.UNNECESSARY;
-import static java.util.Objects.requireNonNull;
+import static java.util.stream.Collectors.joining;
 
 /**
  * TODO rewrite this. Reference: https://trino.io/docs/current/develop/connectors.html
-  */
+ */
 public class DatabricksClient extends BaseJdbcClient {
     private final AggregateFunctionRewriter<JdbcExpression, ?> aggregateFunctionRewriter;
 
@@ -96,6 +93,12 @@ public class DatabricksClient extends BaseJdbcClient {
                         .add(new ImplementRegrIntercept())
                         .add(new ImplementRegrSlope())
                         .build());
+    }
+
+    @Override
+    protected void dropTable(ConnectorSession session, RemoteTableName remoteTableName, boolean temporaryTable) {
+        String sql = "DROP TABLE " + (remoteTableName.getSchemaName().get() + "." + remoteTableName.getTableName());
+        execute(session, sql);
     }
 
     @Override
@@ -142,7 +145,7 @@ public class DatabricksClient extends BaseJdbcClient {
             case Types.VARCHAR:
                 int columnSize = typeHandle.requiredColumnSize();
                 if (columnSize == -1) {
-                    return Optional.of(varcharColumnMapping(createUnboundedVarcharType(),true));
+                    return Optional.of(varcharColumnMapping(createUnboundedVarcharType(), true));
                 }
                 return Optional.of(defaultVarcharColumnMapping(columnSize, true));
 
@@ -176,6 +179,41 @@ public class DatabricksClient extends BaseJdbcClient {
     }
 
     @Override
+    protected JdbcOutputTableHandle createTable(ConnectorSession session, ConnectorTableMetadata tableMetadata, String targetTableName, Optional<ColumnMetadata> pageSinkIdColumn)
+            throws SQLException {
+        SchemaTableName schemaTableName = tableMetadata.getTable();
+
+        ConnectorIdentity identity = session.getIdentity();
+//        if (!getSchemaNames(session).contains(schemaTableName.getSchemaName())) {
+//            throw new SchemaNotFoundException(schemaTableName.getSchemaName());
+//        }
+
+        try (Connection connection = connectionFactory.openConnection(session)) {
+//                verify(connection.getAutoCommit());
+            RemoteIdentifiers remoteIdentifiers = getRemoteIdentifiers(connection);
+            String remoteSchema = getIdentifierMapping().toRemoteSchemaName(remoteIdentifiers, identity, schemaTableName.getSchemaName());
+            String remoteTable = getIdentifierMapping().toRemoteTableName(remoteIdentifiers, identity, remoteSchema, schemaTableName.getTableName());
+            String remoteTargetTableName = getIdentifierMapping().toRemoteTableName(remoteIdentifiers, identity, remoteSchema, targetTableName);
+            String catalog = connection.getCatalog();
+
+            verifyTableName(connection.getMetaData(), remoteTargetTableName);
+
+            return createTable(
+                    session,
+                    connection,
+                    tableMetadata,
+                    remoteIdentifiers,
+                    catalog,
+                    remoteSchema,
+                    remoteTable,
+                    remoteTargetTableName,
+                    pageSinkIdColumn);
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Override
     public WriteMapping toWriteMapping(ConnectorSession session, Type type) {
         if (type == BOOLEAN) {
             return WriteMapping.booleanMapping("BOOLEAN", booleanWriteFunction());
@@ -196,7 +234,7 @@ public class DatabricksClient extends BaseJdbcClient {
             return WriteMapping.longMapping("real", realWriteFunction());
         }
         if (type == DOUBLE) {
-            return WriteMapping.doubleMapping("double precision", doubleWriteFunction());
+            return WriteMapping.doubleMapping("double", doubleWriteFunction());
         }
         if (type instanceof DecimalType decimalType) {
             String dataType = format("decimal(%s, %s)", decimalType.getPrecision(), decimalType.getScale());
@@ -223,14 +261,17 @@ public class DatabricksClient extends BaseJdbcClient {
         if (type instanceof TimeType timeType) {
             return WriteMapping.longMapping(format("date(%s)", timeType.getPrecision()), timeWriteFunction(timeType.getPrecision()));
         }
+        if (type instanceof DateType) {
+            return WriteMapping.longMapping("date", dateWriteFunctionUsingSqlDate());
+        }
         throw new TrinoException(NOT_SUPPORTED, "Unsupported column type: " + type.getDisplayName());
     }
 
-    @Override
-    public Optional<JdbcExpression> implementAggregation(ConnectorSession session, AggregateFunction aggregate, Map<String, ColumnHandle> assignments) {
-        // TODO support complex ConnectorExpressions
-        return aggregateFunctionRewriter.rewrite(session, aggregate, assignments);
-    }
+//    @Override
+//    public Optional<JdbcExpression> implementAggregation(ConnectorSession session, AggregateFunction aggregate, Map<String, ColumnHandle> assignments) {
+//        // TODO support complex ConnectorExpressions
+//        return aggregateFunctionRewriter.rewrite(session, aggregate, assignments);
+//    }
 
     @Override
     public boolean supportsAggregationPushdown(ConnectorSession session, JdbcTableHandle table, List<AggregateFunction> aggregates, Map<String, ColumnHandle> assignments, List<List<ColumnHandle>> groupingSets) {
@@ -240,7 +281,7 @@ public class DatabricksClient extends BaseJdbcClient {
 
     @Override
     protected void createSchema(ConnectorSession session, Connection connection, String remoteSchemaName) throws SQLException {
-        execute(session, connection, "CREATE SCHEMA " + remoteSchemaName);
+        execute(session, connection, "CREATE Database if not exists " + remoteSchemaName);
     }
 
     private static Optional<JdbcTypeHandle> decimalTypeHandle(DecimalType decimalType) {
@@ -297,20 +338,15 @@ public class DatabricksClient extends BaseJdbcClient {
         checkArgument(tableMetadata.getProperties().isEmpty(), "Unsupported table properties: %s", tableMetadata.getProperties());
         return ImmutableList.of(format("CREATE TABLE %s (%s) COMMENT %s",
                 (remoteTableName.getSchemaName().get() + "." + remoteTableName.getTableName()),
-                join(", ", columns), snowflakeVarcharLiteral(tableMetadata.getComment().orElse(""))));
+                join(", ", columns), quoted(tableMetadata.getComment().orElse(""))));
     }
 
     @Override
     public void setTableComment(ConnectorSession session, JdbcTableHandle handle, Optional<String> comment) {
         String sql = "COMMENT ON TABLE %s IS %s".formatted(
-                quoted(handle.asPlainTable().getRemoteTableName()),
-                snowflakeVarcharLiteral(comment.orElse("")));
+                handle.asPlainTable().getRemoteTableName(),
+                quoted(comment.orElse("")));
         execute(session, sql);
-    }
-
-    private static String snowflakeVarcharLiteral(String value) {
-        requireNonNull(value, "value is null");
-        return "'" + value.replace("'", "''").replace("\\", "\\\\") + "'";
     }
 
     @Override
@@ -340,4 +376,94 @@ public class DatabricksClient extends BaseJdbcClient {
         }
         return sb.toString();
     }
+
+    @Override
+    public Collection<String> listSchemas(Connection connection) {
+        // for Clickhouse, we need to list catalogs instead of schemas
+        try (ResultSet resultSet = connection.getMetaData().getCatalogs()) {
+            ImmutableSet.Builder<String> schemaNames = ImmutableSet.builder();
+            while (resultSet.next()) {
+                String schemaName = resultSet.getString("TABLE_CAT");
+                // skip internal schemas
+                if (filterSchema(schemaName)) {
+                    schemaNames.add(schemaName);
+                }
+            }
+            return schemaNames.build();
+        } catch (SQLException e) {
+            throw new TrinoException(JDBC_ERROR, e);
+        }
+    }
+
+    @Override
+    public String buildInsertSql(JdbcOutputTableHandle handle, List<WriteFunction> columnWriters)
+    {
+        boolean hasPageSinkIdColumn = handle.getPageSinkIdColumnName().isPresent();
+        checkArgument(handle.getColumnNames().size() == columnWriters.size(), "handle and columnWriters mismatch: %s, %s", handle, columnWriters);
+        return format(
+                "INSERT INTO %s (%s%s) VALUES (%s%s)",
+                        handle.getRemoteTableName().getSchemaName().orElse(null) + "." +
+                        handle.getTemporaryTableName().orElseGet(() -> handle.getRemoteTableName().getTableName()),
+                handle.getColumnNames().stream()
+//                        .map(this::quoted)
+                        .collect(joining(", ")),
+                hasPageSinkIdColumn ? ", " + quoted(handle.getPageSinkIdColumnName().get()) : "",
+                columnWriters.stream()
+                        .map(WriteFunction::getBindExpression)
+                        .collect(joining(",")),
+                hasPageSinkIdColumn ? ", ?" : "");
+    }
+
+    @Override
+    protected void renameTable(ConnectorSession session, Connection connection, String catalogName, String remoteSchemaName, String remoteTableName, String newRemoteSchemaName, String newRemoteTableName)
+            throws SQLException
+    {
+        execute(session, connection, format(
+                "ALTER TABLE %s RENAME TO %s",
+                remoteSchemaName + "." + remoteTableName,
+                newRemoteSchemaName + "." + newRemoteTableName));
+    }
+
+    @Override
+    public List<JdbcColumnHandle> getColumns(ConnectorSession session, SchemaTableName schemaTableName, RemoteTableName remoteTableName) {
+        RemoteTableName rtn;
+        if (Strings.isNullOrEmpty(remoteTableName.getCatalogName().get())) {
+            rtn = new RemoteTableName(Optional.empty(), remoteTableName.getSchemaName(), remoteTableName.getTableName());
+        } else {
+            rtn = new RemoteTableName(remoteTableName.getCatalogName(), remoteTableName.getSchemaName(), remoteTableName.getTableName());
+        }
+        return super.getColumns(session, schemaTableName, rtn);
+    }
+
+    public String quoted(RemoteTableName remoteTableName) {
+        Optional<String> catalog = remoteTableName.getCatalogName();
+        if (catalog.isPresent() && catalog.get().equals("")) {
+            catalog = Optional.empty();
+        }
+        return append(catalog.orElse(null),
+                remoteTableName.getSchemaName().orElse(null),
+                remoteTableName.getTableName());
+    }
+
+    protected String append(@Nullable String catalog, @Nullable String schema, String table) {
+        StringBuilder sb = new StringBuilder();
+        if (!isNullOrEmpty(catalog)) {
+            sb.append(catalog).append(".");
+        }
+        if (!isNullOrEmpty(schema)) {
+            sb.append(schema).append(".");
+        }
+        sb.append(table);
+        return sb.toString();
+    }
+
+    //    protected String quoted(@Nullable String catalog, @Nullable String schema, String table)
+//    {
+//        StringBuilder sb = new StringBuilder();
+//        if (!isNullOrEmpty(schema)) {
+//            sb.append(schema).append(".");
+//        }
+//        sb.append(table);
+//        return sb.toString();
+//    }
 }
