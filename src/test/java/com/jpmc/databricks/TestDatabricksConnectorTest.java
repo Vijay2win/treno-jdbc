@@ -83,7 +83,7 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
 
     @Test
     public void testTableQuery() {
-        MaterializedResult result = getQueryRunner().execute(getSession(), "select * from tpch.orders");
+        MaterializedResult result = getQueryRunner().execute(getSession(), "select * from tpch.orders limit 1");
         result.getMaterializedRows().stream().forEach(r -> {
             System.out.print(r.getField(0));
             System.out.print(r.getField(1));
