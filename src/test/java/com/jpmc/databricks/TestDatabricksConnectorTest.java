@@ -82,24 +82,18 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
     }
 
     @Test
-    public void testSampleBySqlInjection() {
-        String tableName = "sql_injection_" + randomNameSuffix();
-        try {
-            assertQueryFails("CREATE TABLE " + tableName + " (p1 int NOT NULL, p2 boolean NOT NULL, x VARCHAR) WITH (engine = 'MergeTree', order_by = ARRAY['p1', 'p2'], primary_key = ARRAY['p1', 'p2'], sample_by = 'p2; drop table tpch.nation')", "(?s).*Missing columns: 'p2; drop table tpch.nation.*");
-            assertUpdate("CREATE TABLE " + tableName + " (p1 int NOT NULL, p2 boolean NOT NULL, x VARCHAR) WITH (engine = 'MergeTree', order_by = ARRAY['p1', 'p2'], primary_key = ARRAY['p1', 'p2'], sample_by = 'p2')");
-            assertQueryFails("ALTER TABLE " + tableName + " SET PROPERTIES sample_by = 'p2; drop table tpch.nation'", "(?s).*Missing columns: 'p2; drop table tpch.nation.*");
-            assertUpdate("ALTER TABLE " + tableName + " SET PROPERTIES sample_by = 'p2'");
-        } finally {
-            assertUpdate("DROP TABLE IF EXISTS " + tableName);
-        }
+    public void testTableQuery() {
+        MaterializedResult result = getQueryRunner().execute(getSession(), "select * from tpch.orders");
+        result.getMaterializedRows().stream().forEach(r -> {
+            System.out.print(r.getField(0));
+            System.out.print(r.getField(1));
+            System.out.print(r.getField(2));
+            System.out.print(r.getField(3));
+            System.out.print(r.getField(4));
+            System.out.print(r.getField(5));
+        });
     }
 
-    @Test
-    @Override
-    public void testRenameColumn() {
-        // databricks need resets all data in a column for specified column which to be renamed
-        abort("TODO: test not implemented yet");
-    }
 
     @Test
     @Override

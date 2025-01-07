@@ -2,9 +2,7 @@ package com.jpmc.databricks;
 
 import org.junit.jupiter.api.Test;
 
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.Statement;
+import java.sql.*;
 
 public class TestSimpleQuery {
     @Test

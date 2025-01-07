@@ -18,6 +18,13 @@
     </properties>
 
     <dependencies>
+        <dependency>
+            <groupId>com.cloudera</groupId>
+            <artifactId>hive-jdbc</artifactId>
+            <version>1.0</version>
+            <scope>system</scope>
+            <systemPath>${project.basedir}/src/main/resources/jdbc/driver/HiveJDBC42.jar</systemPath>
+        </dependency>
 
         <dependency>
             <groupId>com.databricks</groupId>

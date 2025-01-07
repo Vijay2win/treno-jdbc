@@ -14,7 +14,8 @@ public class DatabricksDriver implements Driver {
     public DatabricksDriver(DatabricksConfig config) {
         this.config = config;
         this.databricksDelegate = new com.databricks.client.jdbc.Driver();
-        this.hiveDelegate = new org.apache.hive.jdbc.HiveDriver();
+        //this.hiveDelegate = new org.apache.hive.jdbc.HiveDriver();
+        this.hiveDelegate = new com.cloudera.hive.jdbc.HS2Driver();
     }
 
     @Override

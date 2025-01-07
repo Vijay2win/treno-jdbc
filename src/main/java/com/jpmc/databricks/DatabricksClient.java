@@ -19,12 +19,15 @@ import io.trino.spi.TrinoException;
 import io.trino.spi.connector.*;
 import io.trino.spi.security.ConnectorIdentity;
 import io.trino.spi.type.*;
+import org.joda.time.DateTimeZone;
 
 import javax.annotation.Nullable;
 import java.sql.Connection;
+import java.sql.Date;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Types;
+import java.time.LocalDate;
 import java.util.*;
 import java.util.function.BiFunction;
 
@@ -49,6 +52,7 @@ import static io.trino.spi.type.VarcharType.createUnboundedVarcharType;
 import static java.lang.Math.max;
 import static java.lang.String.format;
 import static java.lang.String.join;
+import static java.util.concurrent.TimeUnit.DAYS;
 import static java.util.stream.Collectors.joining;
 
 /**
@@ -160,7 +164,8 @@ public class DatabricksClient extends BaseJdbcClient {
                 return Optional.of(varbinaryColumnMapping());
 
             case Types.DATE:
-                return Optional.of(dateColumnMappingUsingSqlDate());
+//                return Optional.of(dateColumnMappingUsingSqlDate());
+                return Optional.of(timeColumnMappingUsingSqlTime());
 
             case Types.TIME:
                 // TODO Consider using `StandardColumnMappings.timeColumnMapping`
@@ -267,6 +272,15 @@ public class DatabricksClient extends BaseJdbcClient {
         throw new TrinoException(NOT_SUPPORTED, "Unsupported column type: " + type.getDisplayName());
     }
 
+    public static LongWriteFunction dateWriteFunctionUsingSqlDate()
+    {
+        return LongWriteFunction.of(Types.DATE, (statement, index, value) -> {
+            // convert to midnight in default time zone
+            long millis = DAYS.toMillis(value);
+            statement.setString(index, "'" + new Date(DateTimeZone.UTC.getMillisKeepLocal(DateTimeZone.getDefault(), millis)) + "'");
+        });
+    }
+
 //    @Override
 //    public Optional<JdbcExpression> implementAggregation(ConnectorSession session, AggregateFunction aggregate, Map<String, ColumnHandle> assignments) {
 //        // TODO support complex ConnectorExpressions
@@ -336,9 +350,9 @@ public class DatabricksClient extends BaseJdbcClient {
     @Override
     protected List<String> createTableSqls(RemoteTableName remoteTableName, List<String> columns, ConnectorTableMetadata tableMetadata) {
         checkArgument(tableMetadata.getProperties().isEmpty(), "Unsupported table properties: %s", tableMetadata.getProperties());
-        return ImmutableList.of(format("CREATE TABLE %s (%s) COMMENT %s",
+        return ImmutableList.of(format("CREATE TABLE %s (%s)",
                 (remoteTableName.getSchemaName().get() + "." + remoteTableName.getTableName()),
-                join(", ", columns), quoted(tableMetadata.getComment().orElse(""))));
+                join(", ", columns)));
     }
 
     @Override

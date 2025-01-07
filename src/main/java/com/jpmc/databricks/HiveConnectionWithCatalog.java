@@ -63,17 +63,6 @@ public class HiveConnectionWithCatalog extends DelegatingConnection {
                     super.execute();
                 }
             }
-
-            @Override
-            public int[] executeBatch() throws SQLException {
-                try {
-                    return super.executeBatch();
-                } catch (SQLException ex) {
-                    // HiveConnector doesnt support addBatch
-//                    super.execute();
-                }
-                return new int[0];
-            }
         };
     }
 }

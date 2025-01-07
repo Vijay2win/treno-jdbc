@@ -10,6 +10,7 @@ import io.trino.spi.security.Identity;
 import io.trino.testing.DistributedQueryRunner;
 import io.trino.testing.QueryRunner;
 import io.trino.tpch.TpchTable;
+import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
 import java.util.List;
@@ -68,7 +69,7 @@ public final class DatabricksQueryRunner {
 
                 queryRunner.installPlugin(new DatabricksPlugin());
                 queryRunner.createCatalog("databricks", "databricks", connectorProperties);
-                queryRunner.execute("create schema " + "databricks." + TPCH_SCHEMA);
+//                queryRunner.execute("create schema " + "databricks." + TPCH_SCHEMA);
                 copyTpchTables(queryRunner, "tpch", TINY_SCHEMA_NAME, initialTables);
 
                 return queryRunner;

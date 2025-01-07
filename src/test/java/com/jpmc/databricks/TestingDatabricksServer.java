@@ -31,7 +31,7 @@ public class TestingDatabricksServer implements Closeable {
     }
 
     public String getJdbcUrl() {
-        return format("jdbc:hive2://%s:%s/default;UseNativeQuery=1", "localhost", "10000");
+        return format("jdbc:hive2://%s:%s/default;auth=noSasl;SSL=0;transportMode=http;httpPath=cliservice;user=anonymous;password=anonymous", "localhost", "10001");
     }
 
     @Override
