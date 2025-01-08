@@ -31,8 +31,7 @@ public final class DatabricksQueryRunner {
     public static Builder builder(TestingDatabricksServer server) {
         Builder builder = new Builder()
                 .addConnectorProperty("connection-url", server.getJdbcUrl())
-                .addConnectorProperty("http-path", "sql/protocolv1/o/3414251373208641/1227-183607-gazza0cf")
-                .addConnectorProperty("host-name", "community.cloud.databricks.com");
+                .addConnectorProperty("http-path", "sql/protocolv1/o/3414251373208641/1227-183607-gazza0cf");
         return builder;
     }
 

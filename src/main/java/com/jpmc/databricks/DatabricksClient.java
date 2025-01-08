@@ -413,7 +413,7 @@ public class DatabricksClient extends BaseJdbcClient {
     @Override
     public Collection<String> listSchemas(Connection connection) {
         // for Clickhouse, we need to list catalogs instead of schemas
-        try (ResultSet resultSet = connection.getMetaData().getSchemas()) {
+        try (ResultSet resultSet = connection.getMetaData().getCatalogs()) {
             ImmutableSet.Builder<String> schemaNames = ImmutableSet.builder();
             while (resultSet.next()) {
                 String schemaName = resultSet.getString("TABLE_CAT");
