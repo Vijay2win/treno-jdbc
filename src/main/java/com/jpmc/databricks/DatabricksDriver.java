@@ -14,7 +14,6 @@ public class DatabricksDriver implements Driver {
     public DatabricksDriver(DatabricksConfig config) {
         this.config = config;
         this.databricksDelegate = new com.databricks.client.jdbc.Driver();
-        //this.hiveDelegate = new org.apache.hive.jdbc.HiveDriver();
         this.hiveDelegate = new com.cloudera.hive.jdbc.HS2Driver();
     }
 
@@ -29,7 +28,7 @@ public class DatabricksDriver implements Driver {
             }
 
             // Handle if the connection url is sent as a whole
-            if (config.getConnectionUrl() != null) {
+            if (url.contains("hive2")) {
                 // TODO add oauth check
                 // TODO remove or move to seperate class?
                 // This class is only used for tests to run for now.
@@ -44,13 +43,12 @@ public class DatabricksDriver implements Driver {
              *      Auth_AccessToken=<oauth-token>
              */
             Class.forName("com.databricks.client.jdbc.Driver");
-            String newurl = "jdbc:databricks://" + config.getHostName() + ":443";
             Properties newproperties = new Properties();
             newproperties.put("httpPath", config.getHttpPath());
             newproperties.put("AuthMech", "11");
             newproperties.put("Auth_Flow", "0");
             newproperties.put("Auth_AccessToken", token);
-            return new HiveConnectionWithCatalog(databricksDelegate.connect(newurl, newproperties), newurl);
+            return new HiveConnectionWithCatalog(databricksDelegate.connect(url, newproperties), url);
         } catch (ClassNotFoundException ex) {
             throw new RuntimeException(ex);
         }

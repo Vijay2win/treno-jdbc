@@ -10,7 +10,6 @@ import java.util.Optional;
  * Configuration for each JDBC connection been made. When OAuth token is recreated, this object needs to be recreated.
  */
 public class DatabricksConfig {
-    private String hostName;
     private String httpPath;
     private boolean mapStringAsVarchar;
     private String connectionUrl;
@@ -23,17 +22,6 @@ public class DatabricksConfig {
 
     public String getHttpPath() {
         return httpPath;
-    }
-
-    @Config("host-name")
-    @ConfigSecuritySensitive
-    public DatabricksConfig setHostName(String hostName) {
-        this.hostName = hostName;
-        return this;
-    }
-
-    public String getHostName() {
-        return hostName;
     }
 
     @Config("connection-url")

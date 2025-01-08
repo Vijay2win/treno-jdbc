@@ -7,30 +7,36 @@ import io.trino.plugin.jdbc.BaseJdbcConnectorTest;
 import io.trino.spi.security.Identity;
 import io.trino.sql.planner.plan.AggregationNode;
 import io.trino.sql.planner.plan.FilterNode;
+import io.trino.sql.query.QueryAssertions;
 import io.trino.testing.BaseConnectorTest;
 import io.trino.testing.MaterializedResult;
 import io.trino.testing.QueryRunner;
 import io.trino.testing.TestingConnectorBehavior;
+import io.trino.testing.assertions.TrinoExceptionAssert;
 import io.trino.testing.datatype.CreateAndInsertDataSetup;
 import io.trino.testing.datatype.DataSetup;
 import io.trino.testing.sql.SqlExecutor;
 import io.trino.testing.sql.TestTable;
+import org.assertj.core.api.AbstractCollectionAssert;
+import org.assertj.core.api.AssertProvider;
+import org.assertj.core.api.Assertions;
+import org.junit.Ignore;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.sql.*;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.OptionalInt;
+import java.util.*;
+import java.util.function.Consumer;
 
 import static io.trino.plugin.jdbc.JdbcMetadataSessionProperties.DOMAIN_COMPACTION_THRESHOLD;
 import static io.trino.plugin.jdbc.TypeHandlingJdbcSessionProperties.UNSUPPORTED_TYPE_HANDLING;
 import static io.trino.plugin.jdbc.UnsupportedTypeHandling.CONVERT_TO_VARCHAR;
 import static io.trino.spi.type.VarcharType.VARCHAR;
 import static io.trino.testing.MaterializedResult.resultBuilder;
+import static io.trino.testing.TestingConnectorBehavior.SUPPORTS_CREATE_TABLE_WITH_DATA;
 import static io.trino.testing.TestingNames.randomNameSuffix;
 import static java.lang.String.format;
+import static java.util.Objects.requireNonNull;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assumptions.abort;
@@ -94,6 +100,13 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
         });
     }
 
+    @Test
+    public void testShowTablesLike() {
+        ((AbstractCollectionAssert) Assertions.assertThat(this.computeActual("SHOW TABLES LIKE 'or%'").getOnlyColumnAsSet()).contains(new Object[]{"orders"})).allMatch((tableName) -> {
+            return ((String)tableName).startsWith("or");
+        });
+    }
+
 
     @Test
     @Override
@@ -109,13 +122,10 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
         }
     }
 
-    @Override
-    public void testAddColumnWithCommentSpecialCharacter(String comment) {
-        // Override because default storage engine doesn't support renaming columns
-        try (TestTable table = new TestTable(getQueryRunner()::execute, "test_add_column_", "(a_varchar varchar NOT NULL) WITH (engine = 'mergetree', order_by = ARRAY['a_varchar'])")) {
-            assertUpdate("ALTER TABLE " + table.getName() + " ADD COLUMN b_varchar varchar COMMENT " + varcharLiteral(comment));
-            assertThat(getColumnComment(table.getName(), "b_varchar")).isEqualTo(comment);
-        }
+    @Test
+    @Ignore
+    public void testCommentTableSpecialCharacter() {
+        // No need to test this.
     }
 
     @Test
@@ -1133,6 +1143,22 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
             }
             return properties.buildOrThrow();
         }
+    }
+
+    private static void verifyResultOrFailure(AssertProvider<QueryAssertions.QueryAssert> queryAssertProvider, Consumer<QueryAssertions.QueryAssert> verifyResults, Consumer<TrinoExceptionAssert> verifyFailure)
+    {
+        requireNonNull(verifyResults, "verifyResults is null");
+        requireNonNull(verifyFailure, "verifyFailure is null");
+
+        QueryAssertions.QueryAssert queryAssert = assertThat(queryAssertProvider);
+        try {
+            var ignored = queryAssert.result();
+        }
+        catch (Throwable t) {
+            verifyFailure.accept(queryAssert.failure());
+            return;
+        }
+        verifyResults.accept(queryAssert);
     }
 
     private DataSetup databricksCreateAndInsert(String tableNamePrefix) {

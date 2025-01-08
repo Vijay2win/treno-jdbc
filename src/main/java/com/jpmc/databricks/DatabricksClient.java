@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
+import com.google.common.io.Closer;
 import com.google.inject.Inject;
 import io.trino.plugin.base.aggregation.AggregateFunctionRewriter;
 import io.trino.plugin.base.aggregation.AggregateFunctionRule;
@@ -22,19 +23,22 @@ import io.trino.spi.type.*;
 import org.joda.time.DateTimeZone;
 
 import javax.annotation.Nullable;
-import java.sql.Connection;
+import java.io.IOException;
+import java.sql.*;
 import java.sql.Date;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Types;
 import java.time.LocalDate;
 import java.util.*;
 import java.util.function.BiFunction;
 
 import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.base.Strings.emptyToNull;
 import static com.google.common.base.Strings.isNullOrEmpty;
+import static com.google.common.base.Verify.verify;
+import static io.trino.plugin.base.TemporaryTables.generateTemporaryTableName;
 import static io.trino.plugin.jdbc.JdbcErrorCode.JDBC_ERROR;
+import static io.trino.plugin.jdbc.JdbcWriteSessionProperties.getWriteBatchSize;
+import static io.trino.plugin.jdbc.JdbcWriteSessionProperties.isNonTransactionalInsert;
 import static io.trino.plugin.jdbc.StandardColumnMappings.*;
 import static io.trino.plugin.jdbc.TypeHandlingJdbcSessionProperties.getUnsupportedTypeHandling;
 import static io.trino.plugin.jdbc.UnsupportedTypeHandling.CONVERT_TO_VARCHAR;
@@ -59,6 +63,7 @@ import static java.util.stream.Collectors.joining;
  * TODO rewrite this. Reference: https://trino.io/docs/current/develop/connectors.html
  */
 public class DatabricksClient extends BaseJdbcClient {
+    static final Type TRINO_PAGE_SINK_ID_COLUMN_TYPE = BigintType.BIGINT;
     private final AggregateFunctionRewriter<JdbcExpression, ?> aggregateFunctionRewriter;
 
     @Inject
@@ -254,7 +259,7 @@ public class DatabricksClient extends BaseJdbcClient {
         if (type instanceof VarcharType varcharType) {
             String dataType;
             if (varcharType.isUnbounded()) {
-                dataType = "VARCHAR";
+                dataType = "STRING";
             } else {
                 dataType = "VARCHAR(" + varcharType.getBoundedLength() + ")";
             }
@@ -350,9 +355,23 @@ public class DatabricksClient extends BaseJdbcClient {
     @Override
     protected List<String> createTableSqls(RemoteTableName remoteTableName, List<String> columns, ConnectorTableMetadata tableMetadata) {
         checkArgument(tableMetadata.getProperties().isEmpty(), "Unsupported table properties: %s", tableMetadata.getProperties());
-        return ImmutableList.of(format("CREATE TABLE %s (%s)",
+        return ImmutableList.of(format("CREATE TABLE %s ( %s )",
                 (remoteTableName.getSchemaName().get() + "." + remoteTableName.getTableName()),
                 join(", ", columns)));
+    }
+
+    @Override
+    protected String quoted(@jakarta.annotation.Nullable String catalog, @jakarta.annotation.Nullable String schema, String table)
+    {
+        StringBuilder sb = new StringBuilder();
+        if (!isNullOrEmpty(catalog)) {
+            sb.append(catalog).append(".");
+        }
+        if (!isNullOrEmpty(schema)) {
+            sb.append(schema).append(".");
+        }
+        sb.append(table);
+        return sb.toString();
     }
 
     @Override
@@ -394,7 +413,7 @@ public class DatabricksClient extends BaseJdbcClient {
     @Override
     public Collection<String> listSchemas(Connection connection) {
         // for Clickhouse, we need to list catalogs instead of schemas
-        try (ResultSet resultSet = connection.getMetaData().getCatalogs()) {
+        try (ResultSet resultSet = connection.getMetaData().getSchemas()) {
             ImmutableSet.Builder<String> schemaNames = ImmutableSet.builder();
             while (resultSet.next()) {
                 String schemaName = resultSet.getString("TABLE_CAT");
@@ -414,18 +433,116 @@ public class DatabricksClient extends BaseJdbcClient {
     {
         boolean hasPageSinkIdColumn = handle.getPageSinkIdColumnName().isPresent();
         checkArgument(handle.getColumnNames().size() == columnWriters.size(), "handle and columnWriters mismatch: %s, %s", handle, columnWriters);
-        return format(
-                "INSERT INTO %s (%s%s) VALUES (%s%s)",
-                        handle.getRemoteTableName().getSchemaName().orElse(null) + "." +
-                        handle.getTemporaryTableName().orElseGet(() -> handle.getRemoteTableName().getTableName()),
-                handle.getColumnNames().stream()
+        String sql = format(
+                "INSERT INTO %s VALUES (%s%s)",
+                (handle.getRemoteTableName().getSchemaName().orElse(null) + "." +
+                        handle.getTemporaryTableName().orElseGet(() -> handle.getRemoteTableName().getTableName())),
+//                The standard SQL syntax that allows the user to insert values into only some columns is not yet supported.
+//                handle.getColumnNames().stream()
 //                        .map(this::quoted)
-                        .collect(joining(", ")),
+//                        .collect(joining(", ")),
                 hasPageSinkIdColumn ? ", " + quoted(handle.getPageSinkIdColumnName().get()) : "",
                 columnWriters.stream()
                         .map(WriteFunction::getBindExpression)
                         .collect(joining(",")),
                 hasPageSinkIdColumn ? ", ?" : "");
+        return sql;
+    }
+
+    @Override
+    public void finishInsertTable(ConnectorSession session, JdbcOutputTableHandle handle, Set<Long> pageSinkIds)
+    {
+        if (isNonTransactionalInsert(session)) {
+            checkState(handle.getTemporaryTableName().isEmpty(), "Unexpected use of temporary table when non transactional inserts are enabled");
+            return;
+        }
+
+        RemoteTableName temporaryTable = new RemoteTableName(
+                handle.getRemoteTableName().getCatalogName(),
+                handle.getRemoteTableName().getSchemaName(),
+                handle.getTemporaryTableName().orElseThrow());
+
+        // We conditionally create more than the one table, so keep a list of the tables that need to be dropped.
+        Closer closer = Closer.create();
+        closer.register(() -> dropTable(session, temporaryTable, true));
+
+        try (Connection connection = getConnection(session, handle)) {
+            verify(connection.getAutoCommit());
+            String columns = handle.getColumnNames().stream()
+                    .collect(joining(", "));
+
+            String insertSql = format("INSERT INTO %s SELECT * FROM %s",
+                    postProcessInsertTableNameClause(session, quoted(handle.getRemoteTableName())),
+//                    columns,
+                    quoted(temporaryTable));
+
+            if (handle.getPageSinkIdColumnName().isPresent()) {
+                RemoteTableName pageSinkTable = constructPageSinkIdsTable(session, connection, handle, pageSinkIds, closer);
+
+                insertSql += format(" WHERE EXISTS (SELECT 1 FROM %s page_sink_table WHERE page_sink_table.%s = temp_table.%s)",
+                        quoted(pageSinkTable),
+                        handle.getPageSinkIdColumnName().get(),
+                        handle.getPageSinkIdColumnName().get());
+            }
+
+            execute(session, connection, insertSql);
+        }
+        catch (SQLException e) {
+            throw new TrinoException(JDBC_ERROR, e);
+        }
+        finally {
+            try {
+                closer.close();
+            }
+            catch (IOException e) {
+                throw new TrinoException(JDBC_ERROR, e);
+            }
+        }
+    }
+
+    private RemoteTableName constructPageSinkIdsTable(ConnectorSession session, Connection connection, JdbcOutputTableHandle handle, Set<Long> pageSinkIds, Closer closer)
+            throws SQLException
+    {
+        verify(handle.getPageSinkIdColumnName().isPresent(), "Output table handle's pageSinkIdColumn is empty");
+
+        RemoteTableName pageSinkTable = new RemoteTableName(
+                handle.getRemoteTableName().getCatalogName(),
+                handle.getRemoteTableName().getSchemaName(),
+                generateTemporaryTableName(session));
+
+        int maxBatchSize = getWriteBatchSize(session);
+
+        String pageSinkIdColumnName = handle.getPageSinkIdColumnName().get();
+
+        String pageSinkTableSql = format("CREATE TABLE %s (%s)",
+                quoted(pageSinkTable),
+                getColumnDefinitionSql(session, new ColumnMetadata(pageSinkIdColumnName, TRINO_PAGE_SINK_ID_COLUMN_TYPE), pageSinkIdColumnName));
+        String pageSinkInsertSql = format("INSERT INTO %s VALUES (?)", quoted(pageSinkTable));
+        pageSinkInsertSql = queryModifier.apply(session, pageSinkInsertSql);
+        LongWriteFunction pageSinkIdWriter = (LongWriteFunction) toWriteMapping(session, TRINO_PAGE_SINK_ID_COLUMN_TYPE).getWriteFunction();
+
+        execute(session, connection, pageSinkTableSql);
+        closer.register(() -> dropTable(session, pageSinkTable, true));
+
+        try (PreparedStatement statement = connection.prepareStatement(pageSinkInsertSql)) {
+            int batchSize = 0;
+            for (Long pageSinkId : pageSinkIds) {
+                pageSinkIdWriter.set(statement, 1, pageSinkId);
+
+                statement.addBatch();
+                batchSize++;
+
+                if (batchSize >= maxBatchSize) {
+                    statement.executeBatch();
+                    batchSize = 0;
+                }
+            }
+            if (batchSize > 0) {
+                statement.executeBatch();
+            }
+        }
+
+        return pageSinkTable;
     }
 
     @Override
