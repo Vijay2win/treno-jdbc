@@ -87,6 +87,20 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
                 .build();
     }
 
+
+    @Test
+    public void testTableQueryWCatalog() {
+        MaterializedResult result = getQueryRunner().execute(getSession(), "select * from default.tpch.orders limit 1");
+        result.getMaterializedRows().stream().forEach(r -> {
+            System.out.print(r.getField(0));
+            System.out.print(r.getField(1));
+            System.out.print(r.getField(2));
+            System.out.print(r.getField(3));
+            System.out.print(r.getField(4));
+            System.out.print(r.getField(5));
+        });
+    }
+
     @Test
     public void testTableQuery() {
         MaterializedResult result = getQueryRunner().execute(getSession(), "select * from tpch.orders limit 1");
@@ -114,7 +128,7 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
         try (TestTable table = new TestTable(
                 getQueryRunner()::execute,
                 "test_rename_column_",
-                "(id INT NOT NULL, col INT COMMENT 'test column comment') WITH (engine = 'MergeTree', order_by = ARRAY['id'])")) {
+                "(id INT NOT NULL, col INT COMMENT 'test column comment') WITH order_by = ARRAY['id']")) {
             assertThat(getColumnComment(table.getName(), "col")).isEqualTo("test column comment");
 
             assertUpdate("ALTER TABLE " + table.getName() + " RENAME COLUMN col TO renamed_col");
@@ -131,7 +145,7 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
     @Test
     @Override
     public void testDropAndAddColumnWithSameName() {
-        try (TestTable table = new TestTable(getQueryRunner()::execute, "test_drop_add_column", "(x int NOT NULL, y int, z int) WITH (engine = 'MergeTree', order_by = ARRAY['x'])", ImmutableList.of("1,2,3"))) {
+        try (TestTable table = new TestTable(getQueryRunner()::execute, "test_drop_add_column", "(x int NOT NULL, y int, z int) WITH order_by = ARRAY['x']", ImmutableList.of("1,2,3"))) {
             assertUpdate("ALTER TABLE " + table.getName() + " DROP COLUMN y");
             assertQuery("SELECT * FROM " + table.getName(), "VALUES (1, 3)");
 
@@ -142,7 +156,7 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
 
     @Override
     protected String createTableSqlForAddingAndDroppingColumn(String tableName, String columnNameInSql) {
-        return format("CREATE TABLE %s(%s varchar(50), value varchar(50) NOT NULL) WITH (engine = 'MergeTree', order_by = ARRAY['value'])", tableName, columnNameInSql);
+        return format("CREATE TABLE %s(%s varchar(50), value varchar(50) NOT NULL) WITH order_by = ARRAY['value']", tableName, columnNameInSql);
     }
 
     @Test
@@ -166,7 +180,7 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
         String tableName = "test_drop_column_" + randomNameSuffix();
 
         // only MergeTree engine table can drop column
-        assertUpdate("CREATE TABLE " + tableName + "(x int NOT NULL, y int, a int NOT NULL) WITH (engine = 'MergeTree', order_by = ARRAY['x'], partition_by = ARRAY['a'])");
+        assertUpdate("CREATE TABLE " + tableName + "(x int NOT NULL, y int, a int NOT NULL) WITH (order_by = ARRAY['x'], partition_by = ARRAY['a'])");
         assertUpdate("INSERT INTO " + tableName + "(x,y,a) SELECT 123, 456, 111", 1);
 
         // the columns are referenced by order_by/partition_by property can not be dropped
@@ -187,18 +201,18 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
 
     @Override
     protected TestTable createTableWithOneIntegerColumn(String namePrefix) {
-        return new TestTable(getQueryRunner()::execute, namePrefix, "(col integer NOT NULL) WITH (engine = 'MergeTree', order_by = ARRAY['col'])");
+        return new TestTable(getQueryRunner()::execute, namePrefix, "(col integer NOT NULL) WITH order_by = ARRAY['col']");
     }
 
     @Override
     protected String tableDefinitionForAddColumn() {
-        return "(x VARCHAR NOT NULL) WITH (engine = 'MergeTree', order_by = ARRAY['x'])";
+        return "(x VARCHAR NOT NULL) WITH order_by = ARRAY['x']";
     }
 
     @Test
     @Override // Overridden because the default storage type doesn't support adding columns
     public void testAddNotNullColumnToEmptyTable() {
-        try (TestTable table = new TestTable(getQueryRunner()::execute, "test_add_notnull_col_to_empty", "(a_varchar varchar NOT NULL)  WITH (engine = 'MergeTree', order_by = ARRAY['a_varchar'])")) {
+        try (TestTable table = new TestTable(getQueryRunner()::execute, "test_add_notnull_col_to_empty", "(a_varchar varchar NOT NULL)  WITH order_by = ARRAY['a_varchar']")) {
             String tableName = table.getName();
 
             assertUpdate("ALTER TABLE " + tableName + " ADD COLUMN b_varchar varchar NOT NULL");
@@ -214,7 +228,7 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
     @Override
     // Overridden because (a) the default storage type doesn't support adding columns and (b) databricks has implicit default value for new NON NULL column
     public void testAddNotNullColumn() {
-        try (TestTable table = new TestTable(getQueryRunner()::execute, "test_add_notnull_col", "(a_varchar varchar NOT NULL)  WITH (engine = 'MergeTree', order_by = ARRAY['a_varchar'])")) {
+        try (TestTable table = new TestTable(getQueryRunner()::execute, "test_add_notnull_col", "(a_varchar varchar NOT NULL)  WITH order_by = ARRAY['a_varchar']")) {
             String tableName = table.getName();
 
             assertUpdate("ALTER TABLE " + tableName + " ADD COLUMN b_varchar varchar NOT NULL");
@@ -233,7 +247,7 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
     @Override
     public void testAddColumnWithComment() {
         // Override because the default storage type doesn't support adding columns
-        try (TestTable table = new TestTable(getQueryRunner()::execute, "test_add_col_desc_", "(a_varchar varchar NOT NULL) WITH (engine = 'MergeTree', order_by = ARRAY['a_varchar'])")) {
+        try (TestTable table = new TestTable(getQueryRunner()::execute, "test_add_col_desc_", "(a_varchar varchar NOT NULL) WITH order_by = ARRAY['a_varchar']")) {
             String tableName = table.getName();
 
             assertUpdate("ALTER TABLE " + tableName + " ADD COLUMN b_varchar varchar COMMENT 'test new column comment'");
@@ -272,10 +286,7 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
                         "   clerk varchar,\n" +
                         "   shippriority integer,\n" +
                         "   comment varchar\n" +
-                        ")\n" +
-                        "WITH (\n" +
-                        "   engine = 'LOG'\n" +
-                        ")");
+                        ")\n");
     }
 
     @Override
@@ -302,7 +313,7 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
                         "col_nullable Nullable(Int64)," +
                         "col_default Nullable(Int64) DEFAULT 43," +
                         "col_nonnull_default Int64 DEFAULT 42," +
-                        "col_required2 Int64) ENGINE=Log");
+                        "col_required2 Int64)");
     }
 
     @Test
@@ -318,40 +329,6 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
     }
 
     @Test
-    public void testDifferentEngine() {
-        String tableName = "test_different_engine_" + randomNameSuffix();
-        // MergeTree
-        assertUpdate("CREATE TABLE " + tableName + " (id int NOT NULL, x VARCHAR) WITH (engine = 'MergeTree', order_by = ARRAY['id'])");
-        assertThat(getQueryRunner().tableExists(getSession(), tableName)).isTrue();
-        assertUpdate("DROP TABLE " + tableName);
-        assertUpdate("CREATE TABLE " + tableName + " (id int NOT NULL, x VARCHAR) WITH (engine = 'mergetree', order_by = ARRAY['id'])");
-        assertThat(getQueryRunner().tableExists(getSession(), tableName)).isTrue();
-        assertUpdate("DROP TABLE " + tableName);
-        // MergeTree without order by
-        assertUpdate("CREATE TABLE " + tableName + " (id int NOT NULL, x VARCHAR) WITH (engine = 'MergeTree')");
-        assertThat(getQueryRunner().tableExists(getSession(), tableName)).isTrue();
-        assertUpdate("DROP TABLE " + tableName);
-
-        // MergeTree with optional
-        assertUpdate("CREATE TABLE " + tableName + " (id int NOT NULL, x VARCHAR, logdate DATE NOT NULL) WITH " +
-                "(engine = 'MergeTree', order_by = ARRAY['id'], partition_by = ARRAY['logdate'])");
-        assertThat(getQueryRunner().tableExists(getSession(), tableName)).isTrue();
-        assertUpdate("DROP TABLE " + tableName);
-
-        //Log families
-        assertUpdate("CREATE TABLE " + tableName + " (id int NOT NULL, x VARCHAR) WITH (engine = 'log')");
-        assertUpdate("DROP TABLE " + tableName);
-        assertUpdate("CREATE TABLE " + tableName + " (id int NOT NULL, x VARCHAR) WITH (engine = 'tinylog')");
-        assertUpdate("DROP TABLE " + tableName);
-        assertUpdate("CREATE TABLE " + tableName + " (id int NOT NULL, x VARCHAR) WITH (engine = 'stripelog')");
-        assertUpdate("DROP TABLE " + tableName);
-
-        //NOT support engine
-        assertQueryFails("CREATE TABLE " + tableName + " (id int NOT NULL, x VARCHAR) WITH (engine = 'bad_engine')",
-                ".* Unable to set catalog 'databricks' table property 'engine' to.*");
-    }
-
-    @Test
     public void testTableProperty() {
         String tableName = "test_table_property_" + randomNameSuffix();
         // no table property, it should create a table with default Log engine table
@@ -360,49 +337,39 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
         assertUpdate("DROP TABLE " + tableName);
 
         // one required property
-        assertUpdate("CREATE TABLE " + tableName + " (id int NOT NULL, x VARCHAR) WITH (engine = 'Log')");
+        assertUpdate("CREATE TABLE " + tableName + " (id int NOT NULL, x VARCHAR)");
+        assertThat((String) computeScalar("SHOW CREATE TABLE " + tableName))
+                .isEqualTo(format("" +
+                        "CREATE TABLE databricks.tpch.%s (\n" +
+                        "   id integer NOT NULL,\n" +
+                        "   x varchar\n", tableName));
+        assertUpdate("DROP TABLE " + tableName);
+
+        assertUpdate("CREATE TABLE " + tableName + " (id int NOT NULL, x VARCHAR)");
         assertThat((String) computeScalar("SHOW CREATE TABLE " + tableName))
                 .isEqualTo(format("" +
                         "CREATE TABLE databricks.tpch.%s (\n" +
                         "   id integer NOT NULL,\n" +
                         "   x varchar\n" +
-                        ")\n" +
-                        "WITH (\n" +
-                        "   engine = 'LOG'\n" +
                         ")", tableName));
         assertUpdate("DROP TABLE " + tableName);
 
-        assertUpdate("CREATE TABLE " + tableName + " (id int NOT NULL, x VARCHAR) WITH (engine = 'StripeLog')");
+        assertUpdate("CREATE TABLE " + tableName + " (id int NOT NULL, x VARCHAR)");
         assertThat((String) computeScalar("SHOW CREATE TABLE " + tableName))
                 .isEqualTo(format("" +
                         "CREATE TABLE databricks.tpch.%s (\n" +
                         "   id integer NOT NULL,\n" +
                         "   x varchar\n" +
-                        ")\n" +
-                        "WITH (\n" +
-                        "   engine = 'STRIPELOG'\n" +
-                        ")", tableName));
-        assertUpdate("DROP TABLE " + tableName);
-
-        assertUpdate("CREATE TABLE " + tableName + " (id int NOT NULL, x VARCHAR) WITH (engine = 'TinyLog')");
-        assertThat((String) computeScalar("SHOW CREATE TABLE " + tableName))
-                .isEqualTo(format("" +
-                        "CREATE TABLE databricks.tpch.%s (\n" +
-                        "   id integer NOT NULL,\n" +
-                        "   x varchar\n" +
-                        ")\n" +
-                        "WITH (\n" +
-                        "   engine = 'TINYLOG'\n" +
                         ")", tableName));
         assertUpdate("DROP TABLE " + tableName);
 
         // Log engine DOES NOT any property
-        assertQueryFails("CREATE TABLE " + tableName + " (id int NOT NULL, x VARCHAR) WITH (engine = 'Log', order_by=ARRAY['id'])", ".* doesn't support PARTITION_BY, PRIMARY_KEY, ORDER_BY or SAMPLE_BY clauses.*\\n.*");
-        assertQueryFails("CREATE TABLE " + tableName + " (id int NOT NULL, x VARCHAR) WITH (engine = 'Log', partition_by=ARRAY['id'])", ".* doesn't support PARTITION_BY, PRIMARY_KEY, ORDER_BY or SAMPLE_BY clauses.*\\n.*");
-        assertQueryFails("CREATE TABLE " + tableName + " (id int NOT NULL, x VARCHAR) WITH (engine = 'Log', sample_by='id')", ".* doesn't support PARTITION_BY, PRIMARY_KEY, ORDER_BY or SAMPLE_BY clauses.*\\n.*");
+        assertQueryFails("CREATE TABLE " + tableName + " (id int NOT NULL, x VARCHAR) WITH order_by=ARRAY['id']", ".* doesn't support PARTITION_BY, PRIMARY_KEY, ORDER_BY or SAMPLE_BY clauses.*\\n.*");
+        assertQueryFails("CREATE TABLE " + tableName + " (id int NOT NULL, x VARCHAR) WITH partition_by=ARRAY['id']", ".* doesn't support PARTITION_BY, PRIMARY_KEY, ORDER_BY or SAMPLE_BY clauses.*\\n.*");
+        assertQueryFails("CREATE TABLE " + tableName + " (id int NOT NULL, x VARCHAR) WITH sample_by='id'", ".* doesn't support PARTITION_BY, PRIMARY_KEY, ORDER_BY or SAMPLE_BY clauses.*\\n.*");
 
         // optional properties
-        assertUpdate("CREATE TABLE " + tableName + " (id int NOT NULL, x VARCHAR) WITH (engine = 'MergeTree', order_by = ARRAY['id'])");
+        assertUpdate("CREATE TABLE " + tableName + " (id int NOT NULL, x VARCHAR) WITH order_by = ARRAY['id']");
         assertThat((String) computeScalar("SHOW CREATE TABLE " + tableName))
                 .isEqualTo(format("" +
                         "CREATE TABLE databricks.tpch.%s (\n" +
@@ -410,16 +377,15 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
                         "   x varchar\n" +
                         ")\n" +
                         "WITH (\n" +
-                        "   engine = 'MERGETREE',\n" +
                         "   order_by = ARRAY['id'],\n" +
                         "   primary_key = ARRAY['id']\n" + // order_by become primary_key automatically in databricks
                         ")", tableName));
         assertUpdate("DROP TABLE " + tableName);
 
         // the column refers by order by must be not null
-        assertQueryFails("CREATE TABLE " + tableName + " (id int NOT NULL, x VARCHAR) WITH (engine = 'MergeTree', order_by = ARRAY['id', 'x'])", ".*Sorting key contains nullable columns, but merge tree setting `allow_nullable_key` is disabled.*\\n.*");
+        assertQueryFails("CREATE TABLE " + tableName + " (id int NOT NULL, x VARCHAR) WITH order_by = ARRAY['id', 'x']", ".*Sorting key contains nullable columns, but merge tree setting `allow_nullable_key` is disabled.*\\n.*");
 
-        assertUpdate("CREATE TABLE " + tableName + " (id int NOT NULL, x VARCHAR) WITH (engine = 'MergeTree', order_by = ARRAY['id'], primary_key = ARRAY['id'])");
+        assertUpdate("CREATE TABLE " + tableName + " (id int NOT NULL, x VARCHAR) WITH (order_by = ARRAY['id'], primary_key = ARRAY['id'])");
         assertThat((String) computeScalar("SHOW CREATE TABLE " + tableName))
                 .isEqualTo(format("" +
                         "CREATE TABLE databricks.tpch.%s (\n" +
@@ -427,13 +393,12 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
                         "   x varchar\n" +
                         ")\n" +
                         "WITH (\n" +
-                        "   engine = 'MERGETREE',\n" +
                         "   order_by = ARRAY['id'],\n" +
                         "   primary_key = ARRAY['id']\n" +
                         ")", tableName));
         assertUpdate("DROP TABLE " + tableName);
 
-        assertUpdate("CREATE TABLE " + tableName + " (id int NOT NULL, x VARCHAR NOT NULL, y VARCHAR NOT NULL) WITH (engine = 'MergeTree', order_by = ARRAY['id', 'x', 'y'], primary_key = ARRAY['id', 'x'])");
+        assertUpdate("CREATE TABLE " + tableName + " (id int NOT NULL, x VARCHAR NOT NULL, y VARCHAR NOT NULL) WITH (order_by = ARRAY['id', 'x', 'y'], primary_key = ARRAY['id', 'x'])");
         assertThat((String) computeScalar("SHOW CREATE TABLE " + tableName))
                 .isEqualTo(format("" +
                         "CREATE TABLE databricks.tpch.%s (\n" +
@@ -442,13 +407,12 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
                         "   y varchar NOT NULL\n" +
                         ")\n" +
                         "WITH (\n" +
-                        "   engine = 'MERGETREE',\n" +
                         "   order_by = ARRAY['id','x','y'],\n" +
                         "   primary_key = ARRAY['id','x']\n" +
                         ")", tableName));
         assertUpdate("DROP TABLE " + tableName);
 
-        assertUpdate("CREATE TABLE " + tableName + " (id int NOT NULL, x BOOLEAN NOT NULL, y VARCHAR NOT NULL) WITH (engine = 'MergeTree', order_by = ARRAY['id', 'x'], primary_key = ARRAY['id','x'], sample_by = 'x' )");
+        assertUpdate("CREATE TABLE " + tableName + " (id int NOT NULL, x BOOLEAN NOT NULL, y VARCHAR NOT NULL) WITH (order_by = ARRAY['id', 'x'], primary_key = ARRAY['id','x'], sample_by = 'x' )");
         assertThat((String) computeScalar("SHOW CREATE TABLE " + tableName))
                 .isEqualTo(format("" +
                         "CREATE TABLE databricks.tpch.%s (\n" +
@@ -457,7 +421,6 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
                         "   y varchar NOT NULL\n" +
                         ")\n" +
                         "WITH (\n" +
-                        "   engine = 'MERGETREE',\n" +
                         "   order_by = ARRAY['id','x'],\n" +
                         "   primary_key = ARRAY['id','x'],\n" +
                         "   sample_by = 'x'\n" +
@@ -466,7 +429,7 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
 
         // Partition column
         assertUpdate("CREATE TABLE " + tableName + "(id int NOT NULL, part int NOT NULL) WITH " +
-                "(engine = 'MergeTree', order_by = ARRAY['id'], partition_by = ARRAY['part'])");
+                "(order_by = ARRAY['id'], partition_by = ARRAY['part'])");
         assertThat((String) computeScalar("SHOW CREATE TABLE " + tableName))
                 .isEqualTo(format("" +
                         "CREATE TABLE databricks.tpch.%s (\n" +
@@ -474,7 +437,6 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
                         "   part integer NOT NULL\n" +
                         ")\n" +
                         "WITH (\n" +
-                        "   engine = 'MERGETREE',\n" +
                         "   order_by = ARRAY['id'],\n" +
                         "   partition_by = ARRAY['part'],\n" +
                         "   primary_key = ARRAY['id']\n" +
@@ -482,15 +444,15 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
         assertUpdate("DROP TABLE " + tableName);
 
         // Primary key must be a prefix of the sorting key,
-        assertQueryFails("CREATE TABLE " + tableName + " (id int NOT NULL, x boolean NOT NULL, y boolean NOT NULL) WITH (engine = 'MergeTree', order_by = ARRAY['id'], sample_by = ARRAY['x', 'y'])",
+        assertQueryFails("CREATE TABLE " + tableName + " (id int NOT NULL, x boolean NOT NULL, y boolean NOT NULL) WITH (order_by = ARRAY['id'], sample_by = ARRAY['x', 'y'])",
                 ".* Invalid value for catalog 'databricks' table property 'sample_by': .*");
 
         // wrong property type
-        assertQueryFails("CREATE TABLE " + tableName + " (id int NOT NULL) WITH (engine = 'MergeTree', order_by = 'id')",
+        assertQueryFails("CREATE TABLE " + tableName + " (id int NOT NULL) WITH (order_by = 'id')",
                 ".* Invalid value for catalog 'databricks' table property 'order_by': .*");
-        assertQueryFails("CREATE TABLE " + tableName + " (id int NOT NULL) WITH (engine = 'MergeTree', order_by = ARRAY['id'], primary_key = 'id')",
+        assertQueryFails("CREATE TABLE " + tableName + " (id int NOT NULL) WITH (order_by = ARRAY['id'], primary_key = 'id')",
                 ".* Invalid value for catalog 'databricks' table property 'primary_key': .*");
-        assertQueryFails("CREATE TABLE " + tableName + " (id int NOT NULL) WITH (engine = 'MergeTree', order_by = ARRAY['id'], primary_key = ARRAY['id'], partition_by = 'id')",
+        assertQueryFails("CREATE TABLE " + tableName + " (id int NOT NULL) WITH (order_by = ARRAY['id'], primary_key = ARRAY['id'], partition_by = 'id')",
                 ".* Invalid value for catalog 'databricks' table property 'partition_by': .*");
     }
 
@@ -500,10 +462,9 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
         try (TestTable table = new TestTable(
                 getQueryRunner()::execute,
                 "test_alter_table_properties",
-                "(p1 int NOT NULL, p2 boolean NOT NULL, x VARCHAR) WITH (engine = 'MergeTree', order_by = ARRAY['p1', 'p2'], primary_key = ARRAY['p1', 'p2'])")) {
+                "(p1 int NOT NULL, p2 boolean NOT NULL, x VARCHAR) WITH (order_by = ARRAY['p1', 'p2'], primary_key = ARRAY['p1', 'p2'])")) {
             assertThat(getTableProperties("tpch", table.getName()))
                     .containsExactlyEntriesOf(ImmutableMap.of(
-                            "engine", "MergeTree",
                             "order_by", "p1, p2",
                             "partition_by", "",
                             "primary_key", "p1, p2",
@@ -512,7 +473,6 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
             assertUpdate("ALTER TABLE " + table.getName() + " SET PROPERTIES sample_by = 'p2'");
             assertThat(getTableProperties("tpch", table.getName()))
                     .containsExactlyEntriesOf(ImmutableMap.of(
-                            "engine", "MergeTree",
                             "order_by", "p1, p2",
                             "partition_by", "",
                             "primary_key", "p1, p2",
@@ -525,7 +485,7 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
         try (TestTable table = new TestTable(
                 getQueryRunner()::execute,
                 "test_alter_table_properties",
-                "(p1 int NOT NULL, p2 int NOT NULL, x VARCHAR) WITH (engine = 'MergeTree', order_by = ARRAY['p1', 'p2'], primary_key = ARRAY['p1', 'p2'])")) {
+                "(p1 int NOT NULL, p2 int NOT NULL, x VARCHAR) WITH (order_by = ARRAY['p1', 'p2'], primary_key = ARRAY['p1', 'p2'])")) {
             assertQueryFails(
                     "ALTER TABLE " + table.getName() + " SET PROPERTIES invalid_property = 'p2'",
                     "line 1:66: Catalog 'databricks' table property 'invalid_property' does not exist");
@@ -537,7 +497,7 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
         return new TestTable(
                 onRemoteDatabase(),
                 "tpch.test_unsupported_column_present",
-                "(one bigint, two Array(UInt8), three String) ENGINE=Log");
+                "(one bigint, two Array(UInt8), three String)");
     }
 
     @Override
@@ -591,12 +551,12 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
 
     @Override
     protected TestTable createAggregationTestTable(String name, List<String> rows) {
-        return new TestTable(onRemoteDatabase(), name, "(short_decimal Nullable(Decimal(9, 3)), long_decimal Nullable(Decimal(30, 10)), t_double Nullable(Float64), a_bigint Nullable(Int64)) Engine=Log", rows);
+        return new TestTable(onRemoteDatabase(), name, "(short_decimal Nullable(Decimal(9, 3)), long_decimal Nullable(Decimal(30, 10)), t_double Nullable(Float64), a_bigint Nullable(Int64))", rows);
     }
 
     @Override
     protected TestTable createTableWithDoubleAndRealColumns(String name, List<String> rows) {
-        return new TestTable(onRemoteDatabase(), name, "(t_double Nullable(Float64), u_double Nullable(Float64), v_real Nullable(Float32), w_real Nullable(Float32)) Engine=Log", rows);
+        return new TestTable(onRemoteDatabase(), name, "(t_double Nullable(Float64), u_double Nullable(Float64), v_real Nullable(Float32), w_real Nullable(Float32))", rows);
     }
 
     @Test
@@ -661,7 +621,7 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
     @Override
     protected TestTable simpleTable() {
         // override because databricks requires engine specification
-        return new TestTable(onRemoteDatabase(), "tpch.simple_table", "(col BIGINT) Engine=Log", ImmutableList.of("1", "2"));
+        return new TestTable(onRemoteDatabase(), "tpch.simple_table", "(col BIGINT)", ImmutableList.of("1", "2"));
     }
 
     @Test
@@ -906,7 +866,6 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
                         a_lowcardinality_nullable_fixed_string LowCardinality(Nullable(FixedString(1))),
                         a_enum_1 Enum('hello', 'world', 'a', 'b', 'c', '%', '_'),
                         a_enum_2 Enum('hello', 'world', 'a', 'b', 'c', '%', '_'))
-                        ENGINE=Log
                         """,
                 List.of(
                         "(10, 10), (10, 10), 'z', '\\\\', '\\\\', '\\\\', '\\\\', '\\\\', '\\\\', '\\\\', '\\\\', 'hello', 'world'",
@@ -1088,7 +1047,7 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
         String tableName = "test_execute" + randomNameSuffix();
         String schemaTableName = getSession().getSchema().orElseThrow() + "." + tableName;
 
-        assertUpdate("CREATE TABLE " + schemaTableName + "(id int NOT NULL, data int) WITH (engine = 'MergeTree', order_by = ARRAY['id'])");
+        assertUpdate("CREATE TABLE " + schemaTableName + "(id int NOT NULL, data int) WITH order_by = ARRAY['id']");
         try {
             assertUpdate("CALL system.execute('INSERT INTO " + schemaTableName + " VALUES (1, 10)')");
             assertQuery("SELECT * FROM " + schemaTableName, "VALUES (1, 10)");

@@ -36,7 +36,10 @@ public class HiveConnectionWithCatalog extends DelegatingConnection {
 
             @Override
             public ResultSet getSchemas(String catalog, String schemaPattern) throws SQLException {
-                return HiveConnectionWithCatalog.this.delegate.getMetaData().getSchemas();
+                if (catalog == "") {
+                    catalog = "default";
+                }
+                return HiveConnectionWithCatalog.this.delegate.getMetaData().getSchemas(catalog, schemaPattern);
             }
         };
     }
