@@ -286,17 +286,27 @@ public class DatabricksClient extends BaseJdbcClient {
         });
     }
 
+    public static ColumnMapping bigintColumnMapping()
+    {
+        return ColumnMapping.longMapping(BIGINT, ResultSet::getLong, bigintWriteFunction());
+    }
+
+    public static LongWriteFunction bigintWriteFunction()
+    {
+        return LongWriteFunction.of(Types.BIGINT, PreparedStatement::setLong);
+    }
+
 //    @Override
 //    public Optional<JdbcExpression> implementAggregation(ConnectorSession session, AggregateFunction aggregate, Map<String, ColumnHandle> assignments) {
 //        // TODO support complex ConnectorExpressions
 //        return aggregateFunctionRewriter.rewrite(session, aggregate, assignments);
 //    }
 
-    @Override
-    public boolean supportsAggregationPushdown(ConnectorSession session, JdbcTableHandle table, List<AggregateFunction> aggregates, Map<String, ColumnHandle> assignments, List<List<ColumnHandle>> groupingSets) {
-        // Remote database can be case insensitive.
-        return preventTextualTypeAggregationPushdown(groupingSets);
-    }
+//    @Override
+//    public boolean supportsAggregationPushdown(ConnectorSession session, JdbcTableHandle table, List<AggregateFunction> aggregates, Map<String, ColumnHandle> assignments, List<List<ColumnHandle>> groupingSets) {
+//        // Remote database can be case insensitive.
+//        return preventTextualTypeAggregationPushdown(groupingSets);
+//    }
 
     @Override
     protected void createSchema(ConnectorSession session, Connection connection, String remoteSchemaName) throws SQLException {
@@ -315,7 +325,8 @@ public class DatabricksClient extends BaseJdbcClient {
 
     @Override
     protected Optional<BiFunction<String, Long, String>> limitFunction() {
-        return Optional.of((sql, limit) -> sql + " LIMIT " + limit);
+        return Optional.of((sql, limit)
+                -> sql + " LIMIT " + limit);
     }
 
     @Override
@@ -358,6 +369,10 @@ public class DatabricksClient extends BaseJdbcClient {
         return ImmutableList.of(format("CREATE TABLE %s ( %s )",
                 (remoteTableName.getSchemaName().get() + "." + remoteTableName.getTableName()),
                 join(", ", columns)));
+    }
+
+    public String quoted(String name) {
+        return name;
     }
 
     @Override

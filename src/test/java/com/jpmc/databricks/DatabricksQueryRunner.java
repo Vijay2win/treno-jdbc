@@ -68,7 +68,7 @@ public final class DatabricksQueryRunner {
 
                 queryRunner.installPlugin(new DatabricksPlugin());
                 queryRunner.createCatalog("databricks", "databricks", connectorProperties);
-                queryRunner.execute("create schema " + "databricks.test" + TPCH_SCHEMA);
+                queryRunner.execute("create schema " + TPCH_SCHEMA);
                 copyTpchTables(queryRunner, "tpch", TINY_SCHEMA_NAME, initialTables);
 
                 return queryRunner;
