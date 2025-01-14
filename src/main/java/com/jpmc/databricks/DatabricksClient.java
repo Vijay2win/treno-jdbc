@@ -336,13 +336,6 @@ public class DatabricksClient extends BaseJdbcClient {
 
     @Override
     public boolean supportsTopN(ConnectorSession session, JdbcTableHandle handle, List<JdbcSortItem> sortOrder) {
-        for (JdbcSortItem sortItem : sortOrder) {
-            Type sortItemType = sortItem.column().getColumnType();
-            if (sortItemType instanceof CharType || sortItemType instanceof VarcharType) {
-                // Remote database can be case insensitive.
-                return false;
-            }
-        }
         return true;
     }
 
@@ -353,7 +346,7 @@ public class DatabricksClient extends BaseJdbcClient {
 
     @Override
     public boolean isTopNGuaranteed(ConnectorSession session) {
-        return true;
+        return false;
     }
 
     @Override
@@ -372,6 +365,7 @@ public class DatabricksClient extends BaseJdbcClient {
     }
 
     public String quoted(String name) {
+        // column names doesnt need to be quoted.
         return name;
     }
 
@@ -428,10 +422,10 @@ public class DatabricksClient extends BaseJdbcClient {
     @Override
     public Collection<String> listSchemas(Connection connection) {
         // for Clickhouse, we need to list catalogs instead of schemas
-        try (ResultSet resultSet = connection.getMetaData().getCatalogs()) {
+        try (ResultSet resultSet = connection.getMetaData().getSchemas()) {
             ImmutableSet.Builder<String> schemaNames = ImmutableSet.builder();
             while (resultSet.next()) {
-                String schemaName = resultSet.getString("TABLE_CAT");
+                String schemaName = resultSet.getString("TABLE_SCHEM");
                 // skip internal schemas
                 if (filterSchema(schemaName)) {
                     schemaNames.add(schemaName);

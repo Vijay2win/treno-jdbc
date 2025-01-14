@@ -27,24 +27,6 @@ public class HiveConnectionWithCatalog extends DelegatingConnection {
     }
 
     @Override
-    public DatabaseMetaData getMetaData() throws SQLException {
-        return new DelegatingDatabaseMetaData(this, super.getMetaData()){
-            @Override
-            public String getURL() throws SQLException {
-                return url.replace("hive2", "databricks"); // TODO fix it, work around for now
-            }
-
-            @Override
-            public ResultSet getSchemas(String catalog, String schemaPattern) throws SQLException {
-                if (catalog == "") {
-                    catalog = "default";
-                }
-                return HiveConnectionWithCatalog.this.delegate.getMetaData().getSchemas(catalog, schemaPattern);
-            }
-        };
-    }
-
-    @Override
     public void commit() throws SQLException {
         try {
             super.commit();

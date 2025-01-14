@@ -73,6 +73,7 @@ public class TestDatabricksConnectorTest extends BaseJdbcConnectorTest {
                     SUPPORTS_NEGATIVE_DATE,
                     SUPPORTS_ROW_TYPE,
                     SUPPORTS_SET_COLUMN_TYPE,
+                    SUPPORTS_ADD_COLUMN_WITH_COMMENT,
                     SUPPORTS_UPDATE -> false;
             default -> super.hasBehavior(connectorBehavior);
         };

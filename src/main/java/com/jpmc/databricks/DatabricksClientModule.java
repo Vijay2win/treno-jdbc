@@ -1,5 +1,6 @@
 package com.jpmc.databricks;
 
+import com.databricks.client.utilities.MetaDataFactory;
 import com.google.inject.Module;
 import com.google.inject.*;
 import io.opentelemetry.api.OpenTelemetry;
@@ -8,6 +9,7 @@ import io.trino.plugin.base.mapping.IdentifierMapping;
 import io.trino.plugin.jdbc.*;
 import io.trino.plugin.jdbc.credential.CredentialProvider;
 import io.trino.plugin.jdbc.ptf.Query;
+import io.trino.spi.connector.ConnectorMetadata;
 import io.trino.spi.function.table.ConnectorTableFunction;
 
 import java.util.Properties;
