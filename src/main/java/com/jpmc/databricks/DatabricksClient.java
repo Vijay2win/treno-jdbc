@@ -1,6 +1,5 @@
 package com.jpmc.databricks;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
@@ -26,9 +25,9 @@ import javax.annotation.Nullable;
 import java.io.IOException;
 import java.sql.*;
 import java.sql.Date;
-import java.time.LocalDate;
 import java.util.*;
 import java.util.function.BiFunction;
+import java.util.function.Function;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
@@ -341,9 +340,31 @@ public class DatabricksClient extends BaseJdbcClient {
 
     @Override
     protected Optional<TopNFunction> topNFunction() {
-        return Optional.of(TopNFunction.sqlStandard(this::quoted));
+        return Optional.of(TopHiveNFunction.sqlStandard(this::quoted));
     }
 
+    @FunctionalInterface
+    public interface TopHiveNFunction extends TopNFunction
+    {
+        String apply(String query, List<JdbcSortItem> sortItems, long limit);
+
+        static BaseJdbcClient.TopNFunction sqlStandard(Function<String, String> quote)
+        {
+            return (query, sortItems, limit) -> {
+                String orderBy = sortItems.stream()
+                        .map(sortItem -> {
+                            String ordering = sortItem.sortOrder().isAscending() ? "ASC" : "DESC";
+                            String nullsHandling = ""; // TODO handle this case
+                            return format("%s %s %s", quote.apply(sortItem.column().getColumnName()), ordering, nullsHandling);
+                        })
+                        .collect(joining(", "));
+
+                // TODO handle this better with row_num
+                //return format("%s ORDER BY %s and row_num <= %s", query, orderBy, limit);
+                return format("%s ORDER BY %s", query, orderBy, limit);
+            };
+        }
+    }
     @Override
     public boolean isTopNGuaranteed(ConnectorSession session) {
         return false;
