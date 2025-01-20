@@ -1,4 +1,4 @@
-package com.jpmc.databricks;
+package com.jpmc.hiveql;
 
 import io.trino.testing.sql.SqlExecutor;
 

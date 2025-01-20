@@ -1,4 +1,4 @@
-package com.jpmc.databricks;
+package com.jpmc.hiveql;
 
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableList;
@@ -61,12 +61,12 @@ import static java.util.stream.Collectors.joining;
 /**
  * TODO rewrite this. Reference: https://trino.io/docs/current/develop/connectors.html
  */
-public class DatabricksClient extends BaseJdbcClient {
+public class HiveJDBCClient extends BaseJdbcClient {
     static final Type TRINO_PAGE_SINK_ID_COLUMN_TYPE = BigintType.BIGINT;
     private final AggregateFunctionRewriter<JdbcExpression, ?> aggregateFunctionRewriter;
 
     @Inject
-    public DatabricksClient(
+    public HiveJDBCClient(
             BaseJdbcConfig config,
             ConnectionFactory connectionFactory,
             QueryBuilder queryBuilder,
@@ -87,7 +87,7 @@ public class DatabricksClient extends BaseJdbcClient {
                         .add(new ImplementCount(bigintTypeHandle))
                         .add(new ImplementCountDistinct(bigintTypeHandle, false))
                         .add(new ImplementMinMax(false))
-                        .add(new ImplementSum(DatabricksClient::decimalTypeHandle))
+                        .add(new ImplementSum(HiveJDBCClient::decimalTypeHandle))
                         .add(new ImplementAvgFloatingPoint())
                         .add(new ImplementAvgDecimal())
 //                        .add(new ImplementAvgBigint())

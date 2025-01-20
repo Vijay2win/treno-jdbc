@@ -1,34 +1,27 @@
-package com.jpmc.databricks;
+package com.jpmc.hiveql;
 
-import com.databricks.client.utilities.MetaDataFactory;
 import com.google.inject.Module;
 import com.google.inject.*;
 import io.opentelemetry.api.OpenTelemetry;
-import io.trino.plugin.base.mapping.DefaultIdentifierMapping;
-import io.trino.plugin.base.mapping.IdentifierMapping;
 import io.trino.plugin.jdbc.*;
 import io.trino.plugin.jdbc.credential.CredentialProvider;
 import io.trino.plugin.jdbc.ptf.Query;
-import io.trino.spi.connector.ConnectorMetadata;
 import io.trino.spi.function.table.ConnectorTableFunction;
 
 import java.util.Properties;
 
-import static com.google.inject.Scopes.SINGLETON;
 import static com.google.inject.multibindings.Multibinder.newSetBinder;
 import static io.airlift.configuration.ConfigBinder.configBinder;
-import static io.trino.plugin.jdbc.JdbcModule.bindSessionPropertiesProvider;
 
 /**
  * Main module configuration
  */
-public class DatabricksClientModule implements Module {
+public class HiveJDBCModule implements Module {
 
     @Override
     public void configure(Binder binder) {
-        configBinder(binder).bindConfig(DatabricksConfig.class);
-        bindSessionPropertiesProvider(binder, DatabricksSessionProperties.class);
-        binder.bind(JdbcClient.class).annotatedWith(ForBaseJdbc.class).to(DatabricksClient.class).in(Scopes.SINGLETON);
+        configBinder(binder).bindConfig(HiveJDBCConfig.class);
+        binder.bind(JdbcClient.class).annotatedWith(ForBaseJdbc.class).to(HiveJDBCClient.class).in(Scopes.SINGLETON);
         configBinder(binder).bindConfig(TypeHandlingJdbcConfig.class);
         binder.install(new DecimalModule());
         newSetBinder(binder, ConnectorTableFunction.class).addBinding().toProvider(Query.class).in(Scopes.SINGLETON);
@@ -37,9 +30,9 @@ public class DatabricksClientModule implements Module {
     @Singleton
     @Provides
     @ForBaseJdbc
-    public ConnectionFactory getConnectionFactory(DatabricksConfig config, CredentialProvider credentials, OpenTelemetry openTelemetry) {
+    public ConnectionFactory getConnectionFactory(HiveJDBCConfig config, CredentialProvider credentials, OpenTelemetry openTelemetry) {
         Properties properties = new Properties();
-        return new DatabricksConnectionFactory(
+        return new HiveJDBCConnectionFactory(
                 DriverConnectionFactory.builder(new DatabricksDriver(config), config.getConnectionUrl(), credentials)
                         .setCredentialPropertiesProvider(new OauthCredentialPropertiesProvider(credentials))
                         .setConnectionProperties(properties)

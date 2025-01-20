@@ -1,4 +1,4 @@
-package com.jpmc.databricks;
+package com.jpmc.hiveql;
 
 import io.airlift.log.Logger;
 import io.trino.plugin.jdbc.ConnectionFactory;
@@ -12,12 +12,12 @@ import java.sql.SQLException;
 /**
  * Main class for JDBC connector.
  */
-public class DatabricksConnectionFactory implements ConnectionFactory {
-    private static final Logger log = Logger.get(DatabricksConnectionFactory.class);
+public class HiveJDBCConnectionFactory implements ConnectionFactory {
+    private static final Logger log = Logger.get(HiveJDBCConnectionFactory.class);
     private final DriverConnectionFactory factory;
-    private final DatabricksConfig config;
+    private final HiveJDBCConfig config;
 
-    public DatabricksConnectionFactory(DriverConnectionFactory factory, DatabricksConfig config) {
+    public HiveJDBCConnectionFactory(DriverConnectionFactory factory, HiveJDBCConfig config) {
         this.factory = factory;
         this.config = config;
     }
@@ -25,7 +25,7 @@ public class DatabricksConnectionFactory implements ConnectionFactory {
     @Override
     public Connection openConnection(ConnectorSession session) throws SQLException {
         return new ForwardingConnection() {
-            private final Connection delegate = DatabricksConnectionFactory.this.factory.openConnection(session);
+            private final Connection delegate = HiveJDBCConnectionFactory.this.factory.openConnection(session);
 
             @Override
             protected Connection delegate() {

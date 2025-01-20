@@ -1,4 +1,4 @@
-package com.jpmc.databricks;
+package com.jpmc.hiveql;
 
 import com.google.common.collect.ImmutableMap;
 import io.trino.plugin.jdbc.credential.*;

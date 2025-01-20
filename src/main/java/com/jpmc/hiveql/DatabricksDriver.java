@@ -1,4 +1,4 @@
-package com.jpmc.databricks;
+package com.jpmc.hiveql;
 
 import java.sql.*;
 import java.util.Properties;
@@ -8,10 +8,10 @@ import java.util.logging.Logger;
 public class DatabricksDriver implements Driver {
     private final Driver databricksDelegate;
     private final Driver hiveDelegate;
-    private final DatabricksConfig config;
+    private final HiveJDBCConfig config;
     private final AtomicBoolean databricks = new AtomicBoolean(true);
 
-    public DatabricksDriver(DatabricksConfig config) {
+    public DatabricksDriver(HiveJDBCConfig config) {
         this.config = config;
         this.databricksDelegate = new com.databricks.client.jdbc.Driver();
         this.hiveDelegate = new com.cloudera.hive.jdbc.HS2Driver();

@@ -1,7 +1,6 @@
-package com.jpmc.databricks;
+package com.jpmc.hiveql;
 
 import org.apache.commons.dbcp2.DelegatingConnection;
-import org.apache.commons.dbcp2.DelegatingDatabaseMetaData;
 import org.apache.commons.dbcp2.DelegatingPreparedStatement;
 
 import java.sql.*;

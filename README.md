@@ -59,7 +59,13 @@ mvn com.github.ekryd.sortpom:sortpom-maven-plugin:sort -Dsort.sortDependencies=g
 
 ## Installation
 
-Download the JDBC client from xxx to src/main/resources/jdbc/driver
+Download the JDBC client from [hive driver](https://www.cloudera.com/downloads/connectors/hive/jdbc/2-6-25.html) to src/main/resources/jdbc/driver
+
+You need to run the hive container seperately in localhost to run the tests. TODO: Automate this part
+
+```bash
+docker run -it -p 10000:10000 -p 10001:10001 -p 10002:10002 --env SERVICE_NAME=hiveserver2 --env HIVE_SERVER2_TRANSPORT_MODE=all --name hive4 apache/hive:4.0.1
+```
 
 ```bash
 mvn clean package -DskipTests 

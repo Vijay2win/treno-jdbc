@@ -1,21 +1,19 @@
-package com.jpmc.databricks;
+package com.jpmc.hiveql;
 
 import io.airlift.configuration.Config;
 import io.airlift.configuration.ConfigDescription;
 import io.airlift.configuration.ConfigSecuritySensitive;
 
-import java.util.Optional;
-
 /**
  * Configuration for each JDBC connection been made. When OAuth token is recreated, this object needs to be recreated.
  */
-public class DatabricksConfig {
+public class HiveJDBCConfig {
     private String httpPath;
     private boolean mapStringAsVarchar;
     private String connectionUrl;
 
     @Config("http-path")
-    public DatabricksConfig setHttpPath(String httpPath) {
+    public HiveJDBCConfig setHttpPath(String httpPath) {
         this.httpPath = httpPath;
         return this;
     }
@@ -26,7 +24,7 @@ public class DatabricksConfig {
 
     @Config("connection-url")
     @ConfigSecuritySensitive
-    public DatabricksConfig setConnectionUrl(String connectionUrl) {
+    public HiveJDBCConfig setConnectionUrl(String connectionUrl) {
         this.connectionUrl = connectionUrl;
         return this;
     }
@@ -42,7 +40,7 @@ public class DatabricksConfig {
 
     @Config("databricks.map-string-as-varchar")
     @ConfigDescription("Map databricks String and FixedString as varchar instead of varbinary")
-    public DatabricksConfig setMapStringAsVarchar(boolean mapStringAsVarchar)
+    public HiveJDBCConfig setMapStringAsVarchar(boolean mapStringAsVarchar)
     {
         this.mapStringAsVarchar = mapStringAsVarchar;
         return this;

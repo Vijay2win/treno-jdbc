@@ -1,16 +1,12 @@
-package com.jpmc.databricks;
+package com.jpmc.hiveql;
 
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import io.airlift.log.Logger;
-import io.trino.Session;
 import io.trino.plugin.tpch.TpchPlugin;
-import io.trino.spi.security.Identity;
 import io.trino.testing.DistributedQueryRunner;
 import io.trino.testing.QueryRunner;
 import io.trino.tpch.TpchTable;
-import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
 import java.util.List;
@@ -66,7 +62,7 @@ public final class DatabricksQueryRunner {
                 queryRunner.installPlugin(new TpchPlugin());
                 queryRunner.createCatalog("tpch", "tpch");
 
-                queryRunner.installPlugin(new DatabricksPlugin());
+                queryRunner.installPlugin(new HiveJDBCPlugin());
                 queryRunner.createCatalog("databricks", "databricks", connectorProperties);
                 queryRunner.execute("create schema IF NOT EXISTS " + TPCH_SCHEMA);
                 copyTpchTables(queryRunner, "tpch", TINY_SCHEMA_NAME, initialTables);
